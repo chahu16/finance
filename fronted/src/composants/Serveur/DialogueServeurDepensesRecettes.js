@@ -91,9 +91,9 @@ export function useListeComptes(refreshKey = 0) {
 
     return { comptes, loading };
 }
-// Récupère la liste des plafonds notes de frais
+// Récupère le document unique des plafonds { midi: [...], hotel: [...] }
 export function useListePlafonds(refreshKey = 0) {
-    const [plafonds, setPlafonds] = useState([]);
+    const [plafonds, setPlafonds] = useState({ midi: [], hotel: [] });
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
@@ -108,9 +108,11 @@ export function useListePlafonds(refreshKey = 0) {
             });
     }, [refreshKey]);
 
-    return { plafonds, loading };
+    // On expose setPlafonds pour permettre une mise à jour directe sans refetch
+    return { plafonds, setPlafonds, loading };
 }
-// Ajout d'un plafond
+
+// Ajout d'une entrée dans midi ou hotel — retourne le doc complet { midi: [...], hotel: [...] }
 export async function AjoutPlafond(plafondAAjouter) {
     try {
         const response = await axios.post(`${baseURL}/ajout-plafond-notes-frais`, plafondAAjouter);

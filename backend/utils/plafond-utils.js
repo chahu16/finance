@@ -1,18 +1,26 @@
 /**
  * Retourne le plafond actif pour un type et une date donnée
+ * @param {Object} plafondDoc - Document unique { midi: [...], hotel: [...] }
+ * @param {'midi'|'hotel'} type
+ * @param {Date|string} date
  */
-const getPlafondActif = (plafonds, type, date) => {
-    const plafondsFiltres = plafonds
-        .filter(p => p.type === type && new Date(p.dateEffet) <= new Date(date))
+const getPlafondActif = (plafondDoc, type, date) => {
+    if (!plafondDoc || !plafondDoc[type]) return null;
+    const entrees = plafondDoc[type]
+        .filter(e => new Date(e.dateEffet) <= new Date(date))
         .sort((a, b) => new Date(b.dateEffet) - new Date(a.dateEffet));
-    return plafondsFiltres[0] ?? null;
+    return entrees[0] ?? null;
 };
 
 /**
  * Calcule la dépense réelle (ma poche) pour une note de frais
- * @returns montant en centimes
+ * @param {number} montantCents - montant en centimes
+ * @param {string} description
+ * @param {Object} plafondDoc - Document unique { midi: [...], hotel: [...] }
+ * @param {Date|string} date
+ * @returns {number} montant en centimes
  */
-const calculerDepenseReelle = (montantCents, description, plafonds, date) => {
+const calculerDepenseReelle = (montantCents, description, plafondDoc, date) => {
     const desc = (description ?? "").toLowerCase();
 
     let type = null;
@@ -28,7 +36,7 @@ const calculerDepenseReelle = (montantCents, description, plafonds, date) => {
 
     if (!type) return montantCents;
 
-    const plafond = getPlafondActif(plafonds, type, date);
+    const plafond = getPlafondActif(plafondDoc, type, date);
     if (!plafond) return montantCents;
 
     const plafondCents = plafond.montantMax * multiplicateur;

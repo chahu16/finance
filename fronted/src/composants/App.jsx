@@ -74,7 +74,7 @@ export default function App() {
   const [afficherFraisFixesArchives, setAfficherFraisFixesArchives] = useState(false);
   const compteJoint = rowsComptesLocal.find(c => c.estCompteJoint && !c.archive);
   const [refreshKeyPlafonds, setRefreshKeyPlafonds] = useState(0);
-  const { plafonds } = useListePlafonds(refreshKeyPlafonds);
+  const { plafonds, setPlafonds } = useListePlafonds(refreshKeyPlafonds);
   const [snackbarPlafond, setSnackbarPlafond] = useState({ open: false, message: '', severity: 'success' });
   const [erreursPlafond, setErreursPlafond] = useState({});
   const montantRefs = useRef({});
@@ -618,6 +618,7 @@ export default function App() {
               </AccordionSummary>
               <AccordionDetails>
                 <FullFeaturedCrudGrid
+                  height="500px"
                   columns={getVirementInterneColumns(nomsComptesFraisFixe, compteJoint)}
                   rows={rowsVirementsLocal}
                   initialRows={rowsVirementsLocal}
@@ -642,8 +643,8 @@ export default function App() {
                   </Typography>
                   <Box sx={appPlafondGridStyle}>
                     {['midi', 'hotel'].map(type => {
-                      const plafondActif = plafonds
-                        .filter(p => p.type === type)
+                      const plafondActif = (plafonds[type] ?? [])
+                        .filter(p => new Date(p.dateEffet) <= new Date())
                         .sort((a, b) => new Date(b.dateEffet) - new Date(a.dateEffet))[0];
                       return (
                         <Box key={type} sx={appPlafondCardStyle}>
@@ -716,6 +717,7 @@ export default function App() {
                                 const montant = parseFloat(montantRefs.current[type]?.value);
                                 const dateSelectionnee = datesPlafond[type];
                                 const isValidDate = (d) => d instanceof Date && !isNaN(d.getTime());
+
                                 setErreursPlafond({});
                                 if (!montant || montant <= 0) {
                                   setErreursPlafond(prev => ({ ...prev, [`montant-${type}`]: true }));
@@ -728,8 +730,15 @@ export default function App() {
                                   return;
                                 }
 
+                                if (dateSelectionnee > new Date()) {
+                                  setErreursPlafond(prev => ({ ...prev, [`date-${type}`]: true }));
+                                  setSnackbarPlafond({ open: true, message: "La date d'effet ne peut pas être dans le futur", severity: 'error' });
+                                  return;
+                                }
+
                                 const date = dateSelectionnee.toISOString();
-                                await AjoutPlafond({ type, montantMax: montant, dateEffet: date });
+                                const result = await AjoutPlafond({ type, montantMax: montant, dateEffet: date });
+                                setPlafonds(result);
                                 setSnackbarPlafond({ open: true, message: 'Plafond enregistré avec succès', severity: 'success' });
                                 setRefreshKeyPlafonds(prev => prev + 1);
                               }}

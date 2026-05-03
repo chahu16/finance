@@ -1,55 +1,78 @@
 const plafond = require('../models/plafond-notes-frais.js');
 const { toCents } = require('../utils/utils.js');
 
+/**
+ * Retourne le document unique (ou le crée s'il n'existe pas encore)
+ */
+const getOuCreerDoc = async () => {
+    let doc = await plafond.findOne();
+    if (!doc) {
+        doc = await new plafond({ midi: [], hotel: [] }).save();
+    }
+    return doc;
+};
+
+/**
+ * Formate le document unique pour le front
+ * Retourne { midi: [...], hotel: [...] }
+ */
 const formaterPourFront = (doc) => {
     const item = doc.toObject ? doc.toObject() : doc;
+    const formaterEntrees = (entrees = []) =>
+        entrees
+            .sort((a, b) => new Date(b.dateEffet) - new Date(a.dateEffet))
+            .map(e => ({
+                id: e._id?.toString(),
+                montantMax: (e.montantMax ?? 0) / 100,
+                dateEffet: e.dateEffet,
+            }));
     return {
-        id: item._id?.toString(),
-        type: item.type,
-        montantMax: (item.montantMax ?? 0) / 100,
-        dateEffet: item.dateEffet,
+        midi: formaterEntrees(item.midi),
+        hotel: formaterEntrees(item.hotel),
     };
 };
 
-// Récupère tous les plafonds
+// Récupère le document unique des plafonds
 exports.listePlafonds = async (req, res) => {
     try {
-        const plafonds = await plafond.find().sort({ type: 1, dateEffet: -1 });
-        res.status(200).json(plafonds.map(formaterPourFront));
+        const doc = await getOuCreerDoc();
+        res.status(200).json(formaterPourFront(doc));
     } catch (err) {
         res.status(500).json({ message: err.message });
     }
 };
 
-// Ajout ou mise à jour d'un plafond
+// Ajoute une entrée dans le tableau midi ou hotel
 exports.ajoutPlafond = async (req, res) => {
     try {
         const { type, montantMax, dateEffet } = req.body;
-        const nouveau = await new plafond({
-            type,
+        if (!['midi', 'hotel'].includes(type)) {
+            return res.status(400).json({ message: 'Type invalide (midi ou hotel)' });
+        }
+        const doc = await getOuCreerDoc();
+        doc[type].push({
             montantMax: toCents(montantMax),
             dateEffet: new Date(dateEffet),
-        }).save();
-        res.status(201).json(formaterPourFront(nouveau));
+        });
+        await doc.save();
+        res.status(201).json(formaterPourFront(doc));
     } catch (err) {
         res.status(400).json({ message: err.message });
     }
 };
 
-// Suppression d'un plafond
+// Suppression d'une entrée dans l'historique (prévu pour plus tard)
 exports.suppressionPlafond = async (req, res) => {
     try {
-        await plafond.deleteOne({ _id: req.body.id });
-        res.status(200).json({ message: 'Plafond supprimé !' });
+        const { type, id } = req.body;
+        if (!['midi', 'hotel'].includes(type)) {
+            return res.status(400).json({ message: 'Type invalide' });
+        }
+        const doc = await getOuCreerDoc();
+        doc[type] = doc[type].filter(e => e._id.toString() !== id);
+        await doc.save();
+        res.status(200).json(formaterPourFront(doc));
     } catch (err) {
         res.status(400).json({ message: err.message });
     }
-};
-
-// Récupère le plafond actif pour une date donnée
-exports.plafondActif = (plafonds, type, date) => {
-    const plafondsFiltres = plafonds
-        .filter(p => p.type === type && new Date(p.dateEffet) <= new Date(date))
-        .sort((a, b) => new Date(b.dateEffet) - new Date(a.dateEffet));
-    return plafondsFiltres[0] ?? null;
 };

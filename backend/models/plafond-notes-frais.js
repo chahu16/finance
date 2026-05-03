@@ -1,19 +1,13 @@
 const mongoose = require('mongoose');
 
+const entreePlafondSchema = new mongoose.Schema({
+    montantMax: { type: Number, required: true },
+    dateEffet: { type: Date, required: true },
+}, { _id: true, timestamps: true });
+
 const plafondNotesFraisSchema = new mongoose.Schema({
-    type: {
-        type: String,
-        enum: ['midi', 'hotel'],
-        required: true,
-    },
-    montantMax: {
-        type: Number,
-        required: true,
-    },
-    dateEffet: {
-        type: Date,
-        required: true,
-    },
+    midi: { type: [entreePlafondSchema], default: [] },
+    hotel: { type: [entreePlafondSchema], default: [] },
 }, { timestamps: true });
 
 module.exports = mongoose.model('plafond-notes-frais', plafondNotesFraisSchema);
