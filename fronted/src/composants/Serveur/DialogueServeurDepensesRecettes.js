@@ -93,7 +93,7 @@ export function useListeComptes(refreshKey = 0) {
 }
 // Récupère le document unique des plafonds { midi: [...], hotel: [...] }
 export function useListePlafonds(refreshKey = 0) {
-    const [plafonds, setPlafonds] = useState({ midi: [], hotel: [] });
+    const [plafonds, setPlafonds] = useState({ repas: [], hotelPDJ: [], soireeEtape: [] });
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {

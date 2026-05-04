@@ -62,8 +62,9 @@ export const appAccordionDetailsStyle = {
 
 export const appPlafondGridStyle = {
     display: 'grid',
-    gridTemplateColumns: '1fr 1fr',
+    gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)',
     gap: 2,
+    alignItems: 'start',
 };
 
 export const appPlafondCardStyle = {
@@ -89,6 +90,8 @@ export const appPlafondRowStyle = {
     display: 'flex',
     gap: 1,
     alignItems: 'flex-end',
+    flexWrap: 'wrap',
+    minWidth: 0,
 };
 
 export const appPlafondChampStyle = {
