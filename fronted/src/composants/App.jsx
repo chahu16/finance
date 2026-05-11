@@ -4,7 +4,7 @@ import {
 
 } from "@mui/material";
 import {
-  appAccordionDetailsStyle, appContainerStyle, appHeaderStyle, appGridContainerStyle, appPaperStyle, appLoadingStyle, appErrorStyle, appTabsContainerStyle, appPlafondGridStyle, appPlafondCardStyle, appPlafondTitreStyle, appPlafondActuelStyle, appPlafondRowStyle, appPlafondChampStyle, appPlafondTitreH6Style
+  appPlafondPlafondActifsHotelStyle, appAccordionDetailsStyle, appContainerStyle, appHeaderStyle, appGridContainerStyle, appPaperStyle, appLoadingStyle, appErrorStyle, appTabsContainerStyle, appPlafondGridStyle, appPlafondCardStyle, appPlafondTitreStyle, appPlafondActuelStyle, appPlafondRowStyle, appPlafondChampStyle, appPlafondTitreH6Style
 } from './styles/AppStyles.js';
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import Snackbar from "@mui/material/Snackbar";
@@ -714,7 +714,7 @@ export default function App() {
                         <Typography variant="body2" sx={appPlafondTitreStyle}>Hôtel</Typography>
 
                         {/* Plafonds actifs */}
-                        <Box sx={{ display: 'flex', gap: 3, mb: 1, justifyContent: 'center' }}>
+                        <Box sx={appPlafondPlafondActifsHotelStyle}>
                           <Typography variant="caption" color="text.secondary">
                             Hôtel + pdj : {(plafonds.hotelPDJ ?? [])[0]
                               ? <><strong>{(plafonds.hotelPDJ)[0].montantMax} €</strong> depuis le {new Date((plafonds.hotelPDJ)[0].dateEffet).toLocaleDateString('fr-FR')}</>
