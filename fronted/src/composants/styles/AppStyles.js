@@ -62,9 +62,8 @@ export const appAccordionDetailsStyle = {
 
 export const appPlafondGridStyle = {
     display: 'grid',
-    gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)',
+    gridTemplateColumns: '1fr 1fr',
     gap: 2,
-    alignItems: 'start',
 };
 
 export const appPlafondCardStyle = {
@@ -90,8 +89,6 @@ export const appPlafondRowStyle = {
     display: 'flex',
     gap: 1,
     alignItems: 'flex-end',
-    flexWrap: 'wrap',
-    minWidth: 0,
 };
 
 export const appPlafondChampStyle = {
@@ -131,11 +128,4 @@ export const appPlafondInputErreurStyle = {
     backgroundColor: 'rgba(211, 47, 47, 0.08)',
     boxShadow: 'inset 0 0 0 1px rgba(211, 47, 47, 0.3)',
     '& input': { color: '#d32f2f' },
-};
-
-export const appPlafondPlafondActifsHotelStyle = {
-    display: 'flex',
-    gap: 3,
-    mb: 1,
-    justifyContent: 'center',
 };

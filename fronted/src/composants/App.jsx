@@ -1,11 +1,11 @@
 import { useState, useEffect, useMemo, useRef } from "react";
+import { Box, Paper, Tabs, Tab } from "@mui/material";
 import {
-  Box, Paper, Tabs, Tab, Accordion, AccordionSummary, AccordionDetails, Typography, FormControlLabel, Checkbox
-
-} from "@mui/material";
-import {
-  appPlafondPlafondActifsHotelStyle, appAccordionDetailsStyle, appContainerStyle, appHeaderStyle, appGridContainerStyle, appPaperStyle, appLoadingStyle, appErrorStyle, appTabsContainerStyle, appPlafondGridStyle, appPlafondCardStyle, appPlafondTitreStyle, appPlafondActuelStyle, appPlafondRowStyle, appPlafondChampStyle, appPlafondTitreH6Style
+  appPlafondBoutonStyle, appPlafondInputErreurStyle, appAccordionDetailsStyle, appContainerStyle, appHeaderStyle, appGridContainerStyle, appPaperStyle, appLoadingStyle, appErrorStyle, appTabsContainerStyle, appPlafondGridStyle, appPlafondCardStyle, appPlafondTitreStyle, appPlafondActuelStyle, appPlafondRowStyle, appPlafondChampStyle, appPlafondTitreH6Style
 } from './styles/AppStyles.js';
+import {
+  Accordion, AccordionSummary, AccordionDetails, Typography
+} from "@mui/material";
 import ExpandMoreIcon from "@mui/icons-material/ExpandMore";
 import Snackbar from "@mui/material/Snackbar";
 import Alert from "@mui/material/Alert";
@@ -74,11 +74,11 @@ export default function App() {
   const [afficherFraisFixesArchives, setAfficherFraisFixesArchives] = useState(false);
   const compteJoint = rowsComptesLocal.find(c => c.estCompteJoint && !c.archive);
   const [refreshKeyPlafonds, setRefreshKeyPlafonds] = useState(0);
-  const { plafonds, setPlafonds } = useListePlafonds(refreshKeyPlafonds);
-  const [checkboxHotel, setCheckboxHotel] = useState({ hotelPDJ: false, soireeEtape: false });
+  const { plafonds } = useListePlafonds(refreshKeyPlafonds);
   const [snackbarPlafond, setSnackbarPlafond] = useState({ open: false, message: '', severity: 'success' });
   const [erreursPlafond, setErreursPlafond] = useState({});
   const montantRefs = useRef({});
+  const btnRefs = useRef({});
   const [datesPlafond, setDatesPlafond] = useState({});
 
   // --- 1. RÉCUPÉRATION DES DONNÉES (API) ---
@@ -506,7 +506,7 @@ export default function App() {
               onSaveRow={handleProcessRowUpdate}
               onSaveRowsBulk={CreationDepenseRecetteBulk}
               onDeleteRow={SuppressionDepenseRecette}
-              onRowsUpdate={setRowsDepensesRecettes}
+              onRowsUpdate={null}
               validateRow={validateRow}
               addButtonLabel={addButtonLabelDepensesRecettes}
               applyRules={applyBusinessRules}
@@ -618,11 +618,10 @@ export default function App() {
               </AccordionSummary>
               <AccordionDetails>
                 <FullFeaturedCrudGrid
-                  height="500px"
                   columns={getVirementInterneColumns(nomsComptesFraisFixe, compteJoint)}
                   rows={rowsVirementsLocal}
                   initialRows={rowsVirementsLocal}
-                  onRowsUpdate={setRowsVirementsLocal}
+                  onRowsUpdate={null}
                   onSaveRow={handleSaveVirement}
                   onSaveRowsBulk={CreationVirementsBulk}
                   onDeleteRow={SuppressionVirement}
@@ -638,189 +637,111 @@ export default function App() {
                   <Typography>Paramétrage notes de frais</Typography>
                 </AccordionSummary>
                 <AccordionDetails>
-                  <LocalizationProvider dateAdapter={AdapterDateFns} adapterLocale={fr}>
-                    <Typography variant="h6" sx={appPlafondTitreH6Style}>
-                      Paramétrage notes de frais
-                    </Typography>
-                    <Box sx={appPlafondGridStyle}>
-                      {/* Card Midi et soir */}
-                      <Box sx={appPlafondCardStyle}>
-                        <Typography variant="body2" sx={appPlafondTitreStyle}>Midi et soir</Typography>
-                        <Typography variant="caption" color="text.secondary" sx={appPlafondActuelStyle}>
-                          Plafond actuel : {(plafonds.repas ?? [])[0]
-                            ? <><strong>{(plafonds.repas)[0].montantMax} €</strong> depuis le {new Date((plafonds.repas)[0].dateEffet).toLocaleDateString('fr-FR')}</>
-                            : <strong>Aucun</strong>}
-                        </Typography>
-                        <Box sx={appPlafondRowStyle}>
-                          <Box sx={appPlafondChampStyle}>
-                            <Typography variant="caption" color="text.secondary">Nouveau montant max (€)</Typography>
-                            <TextField
-                              type="number"
-                              inputRef={el => montantRefs.current['repas'] = el}
-                              placeholder="ex : 22.00"
-                              size="small"
-                              fullWidth
-                              sx={{ '& .MuiOutlinedInput-root': erreursPlafond[`montant-repas`] ? { borderColor: 'red' } : {} }}
-                            />
-                          </Box>
-                          <Box sx={appPlafondChampStyle}>
-                            <Typography variant="caption" color="text.secondary">Date d'effet</Typography>
-                            <DatePicker
-                              value={datesPlafond['repas'] ?? null}
-                              onChange={(val) => setDatesPlafond(prev => ({ ...prev, repas: val }))}
-                              slotProps={{
-                                textField: {
-                                  size: 'small',
-                                  error: !!erreursPlafond[`date-repas`],
-                                }
-                              }}
-                            />
-                          </Box>
-                          <Button
-                            variant="contained"
-                            onClick={async () => {
-                              const montant = parseFloat(montantRefs.current['repas']?.value);
-                              const dateSelectionnee = datesPlafond['repas'];
-                              const isValidDate = (d) => d instanceof Date && !isNaN(d.getTime());
-                              setErreursPlafond({});
-                              if (!montant || montant <= 0) {
-                                setErreursPlafond(prev => ({ ...prev, 'montant-repas': true }));
-                                setSnackbarPlafond({ open: true, message: 'Veuillez renseigner un montant valide', severity: 'error' });
-                                return;
-                              }
-                              if (!dateSelectionnee || !isValidDate(dateSelectionnee)) {
-                                setErreursPlafond(prev => ({ ...prev, 'date-repas': true }));
-                                setSnackbarPlafond({ open: true, message: "Date manquante ou incomplète", severity: 'error' });
-                                return;
-                              }
-                              if (dateSelectionnee > new Date()) {
-                                setErreursPlafond(prev => ({ ...prev, 'date-repas': true }));
-                                setSnackbarPlafond({ open: true, message: "La date d'effet ne peut pas être dans le futur", severity: 'error' });
-                                return;
-                              }
-                              const result = await AjoutPlafond({ type: 'repas', montantMax: montant, dateEffet: dateSelectionnee.toISOString() });
-                              setPlafonds(result);
-                              setSnackbarPlafond({ open: true, message: 'Plafond enregistré avec succès', severity: 'success' });
-                              setRefreshKeyPlafonds(prev => prev + 1);
-                            }}
-                          >
-                            Enregistrer
-                          </Button>
-                        </Box>
-                      </Box>
-
-                      {/* Card Hôtel */}
-                      <Box sx={appPlafondCardStyle}>
-                        <Typography variant="body2" sx={appPlafondTitreStyle}>Hôtel</Typography>
-
-                        {/* Plafonds actifs */}
-                        <Box sx={appPlafondPlafondActifsHotelStyle}>
-                          <Typography variant="caption" color="text.secondary">
-                            Hôtel + pdj : {(plafonds.hotelPDJ ?? [])[0]
-                              ? <><strong>{(plafonds.hotelPDJ)[0].montantMax} €</strong> depuis le {new Date((plafonds.hotelPDJ)[0].dateEffet).toLocaleDateString('fr-FR')}</>
+                  <Typography variant="h6" sx={appPlafondTitreH6Style}>
+                    Paramétrage notes de frais
+                  </Typography>
+                  <Box sx={appPlafondGridStyle}>
+                    {['midi', 'hotel'].map(type => {
+                      const plafondActif = plafonds
+                        .filter(p => p.type === type)
+                        .sort((a, b) => new Date(b.dateEffet) - new Date(a.dateEffet))[0];
+                      return (
+                        <Box key={type} sx={appPlafondCardStyle}>
+                          <Typography variant="body2" sx={appPlafondTitreStyle}>
+                            {type === 'midi' ? 'Midi' : 'Hôtel (par nuit)'}
+                          </Typography>
+                          <Typography variant="caption" color="text.secondary" sx={appPlafondActuelStyle}>
+                            Plafond actuel : {plafondActif
+                              ? <><strong>{plafondActif.montantMax} €</strong> depuis le {new Date(plafondActif.dateEffet).toLocaleDateString('fr-FR')}</>
                               : <strong>Aucun</strong>}
                           </Typography>
-                          <Typography variant="caption" color="text.secondary">
-                            Soirée étape : {(plafonds.soireeEtape ?? [])[0]
-                              ? <><strong>{(plafonds.soireeEtape)[0].montantMax} €</strong> depuis le {new Date((plafonds.soireeEtape)[0].dateEffet).toLocaleDateString('fr-FR')}</>
-                              : <strong>Aucun</strong>}
-                          </Typography>
-                        </Box>
-
-                        {/* Ligne de saisie */}
-                        <Box sx={appPlafondRowStyle}>
-                          <Box sx={appPlafondChampStyle}>
-                            <Typography variant="caption" color="text.secondary">Nouveau montant max (€)</Typography>
-                            <TextField
-                              type="number"
-                              inputRef={el => montantRefs.current['hotel'] = el}
-                              placeholder="ex : 120.00"
+                          <Box sx={appPlafondRowStyle}>
+                            <Box sx={appPlafondChampStyle}>
+                              <Typography variant="caption" color="text.secondary">Nouveau montant max (€)</Typography>
+                              <TextField
+                                type="number"
+                                inputRef={el => montantRefs.current[type] = el}
+                                placeholder={type === 'midi' ? 'ex : 22.00' : 'ex : 120.00'}
+                                size="small"
+                                fullWidth
+                                sx={{
+                                  '& .MuiOutlinedInput-root': erreursPlafond[`montant-${type}`] ? appPlafondInputErreurStyle : {}
+                                }}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') btnRefs.current[type]?.click();
+                                  if (e.key === 'Escape') {
+                                    montantRefs.current[type].value = '';
+                                    setDatesPlafond(prev => ({ ...prev, [type]: null }));
+                                    setErreursPlafond({});
+                                    setTimeout(() => setSnackbarPlafond({ open: true, message: 'Saisie annulée', severity: 'warning' }), 50);
+                                  }
+                                }}
+                              />
+                            </Box>
+                            <Box sx={appPlafondChampStyle}>
+                              <Typography variant="caption" color="text.secondary">Date d'effet</Typography>
+                              <LocalizationProvider dateAdapter={AdapterDateFns} adapterLocale={fr}>
+                                <DatePicker
+                                  value={datesPlafond[type] ?? null}
+                                  onChange={(val) => setDatesPlafond(prev => ({ ...prev, [type]: val }))}
+                                  maxDate={new Date()}
+                                  slotProps={{
+                                    textField: {
+                                      variant: "outlined",
+                                      size: "small",
+                                      fullWidth: true,
+                                      sx: {
+                                        '& .MuiOutlinedInput-root': erreursPlafond[`date-${type}`] ? appPlafondInputErreurStyle : {}
+                                      },
+                                      onKeyDown: (e) => {
+                                        if (e.key === 'Enter') btnRefs.current[type]?.click();
+                                        if (e.key === 'Escape') {
+                                          montantRefs.current[type].value = '';
+                                          setDatesPlafond(prev => ({ ...prev, [type]: null }));
+                                          setErreursPlafond({});
+                                          setTimeout(() => setSnackbarPlafond({ open: true, message: 'Saisie annulée', severity: 'warning' }), 50);
+                                        }
+                                      }
+                                    }
+                                  }}
+                                />
+                              </LocalizationProvider>
+                            </Box>
+                            <Button
+                              ref={el => btnRefs.current[type] = el}
+                              variant="contained"
                               size="small"
-                              fullWidth
-                              sx={{ '& .MuiOutlinedInput-root': erreursPlafond[`montant-hotel`] ? { borderColor: 'red' } : {} }}
-                            />
-                          </Box>
-                          <Box sx={appPlafondChampStyle}>
-                            <Typography variant="caption" color="text.secondary">Date d'effet</Typography>
-                            <DatePicker
-                              value={datesPlafond['hotel'] ?? null}
-                              onChange={(val) => setDatesPlafond(prev => ({ ...prev, hotel: val }))}
-                              slotProps={{
-                                textField: {
-                                  size: 'small',
-                                  error: !!erreursPlafond[`date-hotel`],
+                              sx={{ ...appPlafondBoutonStyle, height: '40px' }}
+                              onClick={async () => {
+                                const montant = parseFloat(montantRefs.current[type]?.value);
+                                const dateSelectionnee = datesPlafond[type];
+                                const isValidDate = (d) => d instanceof Date && !isNaN(d.getTime());
+                                setErreursPlafond({});
+                                if (!montant || montant <= 0) {
+                                  setErreursPlafond(prev => ({ ...prev, [`montant-${type}`]: true }));
+                                  setSnackbarPlafond({ open: true, message: 'Veuillez renseigner un montant valide', severity: 'error' });
+                                  return;
                                 }
+                                if (!dateSelectionnee || !isValidDate(dateSelectionnee)) {
+                                  setErreursPlafond(prev => ({ ...prev, [`date-${type}`]: true }));
+                                  setSnackbarPlafond({ open: true, message: "Date manquante ou incomplète", severity: 'error' });
+                                  return;
+                                }
+
+                                const date = dateSelectionnee.toISOString();
+                                await AjoutPlafond({ type, montantMax: montant, dateEffet: date });
+                                setSnackbarPlafond({ open: true, message: 'Plafond enregistré avec succès', severity: 'success' });
+                                setRefreshKeyPlafonds(prev => prev + 1);
                               }}
-                            />
+                              onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.click(); }}
+                            >
+                              Enregistrer
+                            </Button>
                           </Box>
-
-                          {/* Checkboxes */}
-                          <FormControlLabel
-                            control={
-                              <Checkbox
-                                checked={checkboxHotel.hotelPDJ}
-                                onChange={() => setCheckboxHotel(prev => ({ ...prev, hotelPDJ: !prev.hotelPDJ }))}
-                                size="small"
-                              />
-                            }
-                            label={<Typography variant="caption">Hôtel + pdj</Typography>}
-                          />
-                          <FormControlLabel
-                            control={
-                              <Checkbox
-                                checked={checkboxHotel.soireeEtape}
-                                onChange={() => setCheckboxHotel(prev => ({ ...prev, soireeEtape: !prev.soireeEtape }))}
-                                size="small"
-                              />
-                            }
-                            label={<Typography variant="caption">Soirée étape</Typography>}
-                          />
-
-                          <Button
-                            variant="contained"
-                            onClick={async () => {
-                              const montant = parseFloat(montantRefs.current['hotel']?.value);
-                              const dateSelectionnee = datesPlafond['hotel'];
-                              const isValidDate = (d) => d instanceof Date && !isNaN(d.getTime());
-                              setErreursPlafond({});
-                              if (!montant || montant <= 0) {
-                                setErreursPlafond(prev => ({ ...prev, 'montant-hotel': true }));
-                                setSnackbarPlafond({ open: true, message: 'Veuillez renseigner un montant valide', severity: 'error' });
-                                return;
-                              }
-                              if (!dateSelectionnee || !isValidDate(dateSelectionnee)) {
-                                setErreursPlafond(prev => ({ ...prev, 'date-hotel': true }));
-                                setSnackbarPlafond({ open: true, message: "Date manquante ou incomplète", severity: 'error' });
-                                return;
-                              }
-                              if (dateSelectionnee > new Date()) {
-                                setErreursPlafond(prev => ({ ...prev, 'date-hotel': true }));
-                                setSnackbarPlafond({ open: true, message: "La date d'effet ne peut pas être dans le futur", severity: 'error' });
-                                return;
-                              }
-                              const nbCoches = Object.values(checkboxHotel).filter(Boolean).length;
-                              if (nbCoches === 0) {
-                                setSnackbarPlafond({ open: true, message: 'Veuillez cocher une option : Hôtel + petit déjeuner ou Soirée étape', severity: 'error' });
-                                return;
-                              }
-                              if (nbCoches === 2) {
-                                setSnackbarPlafond({ open: true, message: 'Veuillez cocher une seule option à la fois', severity: 'error' });
-                                return;
-                              }
-                              const typeReel = checkboxHotel.hotelPDJ ? 'hotelPDJ' : 'soireeEtape';
-                              const result = await AjoutPlafond({ type: typeReel, montantMax: montant, dateEffet: dateSelectionnee.toISOString() });
-                              setPlafonds(result);
-                              setCheckboxHotel({ hotelPDJ: false, soireeEtape: false });
-                              setSnackbarPlafond({ open: true, message: 'Plafond enregistré avec succès', severity: 'success' });
-                              setRefreshKeyPlafonds(prev => prev + 1);
-                            }}
-                          >
-                            Enregistrer
-                          </Button>
                         </Box>
-                      </Box>
-                    </Box>
-                  </LocalizationProvider>
+                      );
+                    })}
+                  </Box>
                 </AccordionDetails>
               </Accordion>
             )}
