@@ -129,3 +129,10 @@ export const appPlafondInputErreurStyle = {
     boxShadow: 'inset 0 0 0 1px rgba(211, 47, 47, 0.3)',
     '& input': { color: '#d32f2f' },
 };
+
+export const appPlafondPlafondActifsHotelStyle = {
+    display: 'flex',
+    gap: 3,
+    mb: 1,
+    justifyContent: 'center',
+};
