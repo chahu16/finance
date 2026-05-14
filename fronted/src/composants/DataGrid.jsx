@@ -180,6 +180,9 @@ export default function FullFeaturedCrudGrid({
   showArchived,
   archivedLabel,
   externalRows,
+  initialSortModel = [],
+  sortFn,
+  focusField,
 }) {
   const apiRef = useGridApiRef();
   const [rows, setRows] = useState(initialRows);
@@ -569,9 +572,23 @@ export default function FullFeaturedCrudGrid({
           const savedRowFromServer = await onSaveRow(updatedRow, oldRow);
 
           // On met à jour l'état local du DataGrid
-          setRows((prev) =>
-            prev.map((r) => (r.id === updatedRow.id ? savedRowFromServer : r)),
-          );
+          setRows((prev) => {
+            const updated = prev.map((r) => (r.id === updatedRow.id ? savedRowFromServer : r));
+            return sortFn ? sortFn(updated) : updated;
+          });
+
+          setTimeout(() => {
+            const rowIndex = apiRef.current.getRowIndexRelativeToVisibleRows(savedRowFromServer.id);
+            if (rowIndex !== undefined && rowIndex >= 0) {
+              apiRef.current.scrollToIndexes({ rowIndex, colIndex: 0 });
+              apiRef.current.selectRow(savedRowFromServer.id, true, true);
+              // Déplace le focus clavier sur la nouvelle position
+              const fieldToFocus = focusField ?? customColumns[0]?.field;
+              if (fieldToFocus) {
+                apiRef.current.setCellFocus(savedRowFromServer.id, fieldToFocus);
+              }
+            }
+          }, 100);
 
           triggerSnackbar("Enregistrement réussi", "success");
 
@@ -599,7 +616,7 @@ export default function FullFeaturedCrudGrid({
       triggerSnackbar("Modifications enregistrées avec succès !", "success");
       return updatedRow;
     },
-    [onSaveRow, customColumns, validateRow, applyRules, triggerSnackbar],
+    [onSaveRow, customColumns, validateRow, applyRules, triggerSnackbar, sortFn, apiRef, focusField],
   );
 
   const handleConfirmDelete = async () => {

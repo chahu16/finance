@@ -29,7 +29,7 @@ import {
 } from './StatCardsConfig/DepensesRecettesStatCards.js';
 import { valueFormatterDepensesRecettes } from "./config/Config.js";
 import {
-  getDepensesRecettesColumns, validateRow, addButtonLabelDepensesRecettes, getRowTypeLabeldepensesRecettes, applyBusinessRules,
+  trierLignesDepensesRecettes, getDepensesRecettesColumns, validateRow, addButtonLabelDepensesRecettes, getRowTypeLabeldepensesRecettes, applyBusinessRules,
 } from "./gridConfigs/DepensesRecettesGrid.js";
 import {
   getCompteJointColumns, validateCompteJoint, addButtonLabelCompteJoint,
@@ -511,6 +511,9 @@ export default function App() {
               addButtonLabel={addButtonLabelDepensesRecettes}
               applyRules={applyBusinessRules}
               getRowTypeLabel={getRowTypeLabeldepensesRecettes}
+              initialSortModel={[{ field: 'dateDepensesRecettes', sort: 'desc' }]}
+              sortFn={trierLignesDepensesRecettes}
+              focusField="dateDepensesRecettes"
             />
           </Paper>
         )}

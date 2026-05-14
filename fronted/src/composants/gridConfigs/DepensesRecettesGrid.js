@@ -217,3 +217,37 @@ export const applyBusinessRules = (newRow, oldRow) => {
 
     return updatedRow;
 };
+
+/**
+ * Tri des lignes dépenses/recettes — identique au tri backend
+ * 1. Lignes sans date → en haut
+ * 2. Dates égales → tri alphabétique par description
+ * 3. Tri par date décroissant
+ */
+export const trierLignesDepensesRecettes = (rows) => {
+    return [...rows].sort((a, b) => {
+        const dateA = a.dateDepensesRecettes;
+        const dateB = b.dateDepensesRecettes;
+
+        // Lignes sans date en haut
+        if (!dateA && dateB) return -1;
+        if (dateA && !dateB) return 1;
+
+        // Pas de date des 2 côtés → tri alphabétique
+        if (!dateA && !dateB) {
+            const descA = (a.description || "").trim().toLowerCase();
+            const descB = (b.description || "").trim().toLowerCase();
+            return descA.localeCompare(descB);
+        }
+
+        // Dates égales → tri alphabétique
+        if (new Date(dateA).getTime() === new Date(dateB).getTime()) {
+            const descA = (a.description || "").trim().toLowerCase();
+            const descB = (b.description || "").trim().toLowerCase();
+            return descA.localeCompare(descB);
+        }
+
+        // Tri par date décroissant
+        return new Date(dateB) - new Date(dateA);
+    });
+};
