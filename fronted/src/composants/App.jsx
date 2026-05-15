@@ -275,8 +275,15 @@ export default function App() {
         // On retire l'ID temporaire pour laisser MongoDB générer son propre _id
         const { id, ...donneesAEnvoyer } = newRow;
         rawResult = await CreationDepenseRecette(donneesAEnvoyer);
+        setRowsDepensesRecettes(prev => {
+          if (prev.some(r => r.id === rawResult.id)) return prev;
+          return trierLignesDepensesRecettes([...prev, rawResult]);
+        });
       } else {
         rawResult = await ModificationDepenseRecette(newRow);
+        setRowsDepensesRecettes(prev =>
+          trierLignesDepensesRecettes(prev.map(r => r.id === rawResult.id ? rawResult : r))
+        );
       }
 
       // Transformation du résultat brut du serveur vers le format attendu par le Front
@@ -505,7 +512,10 @@ export default function App() {
               initialRows={rowsDepensesRecettes}
               onSaveRow={handleProcessRowUpdate}
               onSaveRowsBulk={CreationDepenseRecetteBulk}
-              onDeleteRow={SuppressionDepenseRecette}
+              onDeleteRow={async (row) => {
+                await SuppressionDepenseRecette(row);
+                setRowsDepensesRecettes(prev => prev.filter(r => r.id !== row.id));
+              }}
               onRowsUpdate={null}
               validateRow={validateRow}
               addButtonLabel={addButtonLabelDepensesRecettes}

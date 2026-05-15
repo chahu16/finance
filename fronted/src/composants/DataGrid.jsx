@@ -220,13 +220,6 @@ export default function FullFeaturedCrudGrid({
     rowModesModelRef.current = rowModesModel;
   }, [rowModesModel]);
 
-
-  useEffect(() => {
-    if (onRowsUpdate) {
-      onRowsUpdate(rows);
-    }
-  }, [rows, onRowsUpdate]);
-
   const selectTextInCell = useCallback(
     (id, field) => {
       // On attend un tout petit peu que MUI passe la cellule en mode <input>
@@ -574,21 +567,23 @@ export default function FullFeaturedCrudGrid({
           // On met à jour l'état local du DataGrid
           setRows((prev) => {
             const updated = prev.map((r) => (r.id === updatedRow.id ? savedRowFromServer : r));
-            return sortFn ? sortFn(updated) : updated;
+            return updated;
           });
-
           setTimeout(() => {
-            const rowIndex = apiRef.current.getRowIndexRelativeToVisibleRows(savedRowFromServer.id);
-            if (rowIndex !== undefined && rowIndex >= 0) {
-              apiRef.current.scrollToIndexes({ rowIndex, colIndex: 0 });
-              apiRef.current.selectRow(savedRowFromServer.id, true, true);
-              // Déplace le focus clavier sur la nouvelle position
-              const fieldToFocus = focusField ?? customColumns[0]?.field;
-              if (fieldToFocus) {
-                apiRef.current.setCellFocus(savedRowFromServer.id, fieldToFocus);
+            if (sortFn) setRows(prev => sortFn(prev));
+            // Focus après le tri
+            setTimeout(() => {
+              const rowIndex = apiRef.current.getRowIndexRelativeToVisibleRows(savedRowFromServer.id);
+              if (rowIndex !== undefined && rowIndex >= 0) {
+                apiRef.current.scrollToIndexes({ rowIndex, colIndex: 0 });
+                apiRef.current.selectRow(savedRowFromServer.id, true, true);
+                const fieldToFocus = focusField ?? customColumns[0]?.field;
+                if (fieldToFocus) {
+                  apiRef.current.setCellFocus(savedRowFromServer.id, fieldToFocus);
+                }
               }
-            }
-          }, 100);
+            }, 100);
+          }, 0);
 
           triggerSnackbar("Enregistrement réussi", "success");
 
