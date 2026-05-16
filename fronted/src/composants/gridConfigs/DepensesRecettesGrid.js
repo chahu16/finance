@@ -180,21 +180,29 @@ export const validateRow = (row) => {
     const depense = parseFloat(row.depenses) || 0;
     const recette = parseFloat(row.recettes) || 0;
 
+    // Règle 0 : Compte obligatoire
+    if (!row.compte || row.compte.trim() === "") {
+        errors.compte = "Le compte est obligatoire";
+    }
+
     // Règle 1 : Une ligne doit être soit une dépense, soit une recette (pas les deux, ni rien)
-    if ((depense === 0 && recette === 0) || (depense > 0 && recette > 0)) {
-        errors.depenses = true;
+    if (depense === 0 && recette === 0) {
+        errors.depenses = "Saisissez soit une dépense, soit une recette";
+        errors.recettes = true;
+    }
+    if (depense > 0 && recette > 0) {
+        errors.depenses = "Impossible d'avoir une dépense et une recette en même temps";
         errors.recettes = true;
     }
 
     // Règle 2 : Si ce n'est pas un chèque en cours ET pas un frais fixe, la date est obligatoire
     if (row.chequeEnCours === false && !row.dateDepensesRecettes && !row.fraisFixe) {
-        errors.chequeEnCours = true;
-        errors.dateDepensesRecettes = true;
+        errors.dateDepensesRecettes = "La date est obligatoire (ou cochez Chèque en cours)";
     }
 
     // Règle 3 : Interdiction de saisir dans le futur
     if (row.dateDepensesRecettes && new Date(row.dateDepensesRecettes) > today) {
-        errors.dateDepensesRecettes = true;
+        errors.dateDepensesRecettes = "La date ne peut pas être dans le futur";
     }
 
     return errors;

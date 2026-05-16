@@ -32,7 +32,7 @@ export const getRowErrors = (row, columns, validateRow) => {
 
         // 1. VALIDATION DE PRÉSENCE (Propriété 'required' dans la config)
         if (col.required && isEmpty) {
-            errors[col.field] = true;
+            errors[col.field] = col.requiredMessage || `"${col.headerName}" est obligatoire`;
         }
 
         // 2. VALIDATION PERSONNALISÉE PAR COLONNE (Via 'col.validate')
@@ -41,7 +41,9 @@ export const getRowErrors = (row, columns, validateRow) => {
                 // Injection d'une chaîne vide par défaut pour éviter les crashs de .trim() ou .length
                 const validationResult = col.validate(value ?? "");
                 if (validationResult !== true) {
-                    errors[col.field] = true;
+                    errors[col.field] = typeof validationResult === 'string'
+                        ? validationResult
+                        : col.validateMessage || `"${col.headerName}" est invalide`;
                 }
             } catch (e) {
                 console.error(`Erreur dans la validation de la colonne "${col.field}":`, e);
@@ -49,13 +51,8 @@ export const getRowErrors = (row, columns, validateRow) => {
         }
 
         // 3. VALIDATION DE VALEUR MINIMALE (Numérique)
-        else if (
-            col.minValue !== undefined &&
-            !isEmpty &&
-            !isNaN(value) &&
-            Number(value) < col.minValue
-        ) {
-            errors[col.field] = true;
+        else if (col.minValue !== undefined && !isEmpty && !isNaN(value) && Number(value) < col.minValue) {
+            errors[col.field] = col.minValueMessage || `"${col.headerName}" doit être supérieur à ${col.minValue}`;
         }
     });
 

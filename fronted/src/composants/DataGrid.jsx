@@ -550,7 +550,11 @@ export default function FullFeaturedCrudGrid({
 
       if (hasError) {
         setShowErrors(true);
-        const error = new Error("Validation échouée");
+        const messages = customColumns
+          .filter(col => errors[col.field] && typeof errors[col.field] === 'string')
+          .map(col => errors[col.field])
+          .join(' · ');
+        const error = new Error(messages || "Validation échouée");
         error.rowId = newRow.id;
         throw error;
       }
@@ -931,7 +935,7 @@ export default function FullFeaturedCrudGrid({
         }}
         onProcessRowUpdateError={(error) => {
           triggerSnackbar(
-            "Erreur de saisie : veuillez vérifier les champs en rouge.",
+            error.message || "Erreur de saisie : veuillez vérifier les champs en rouge.",
             "error",
           );
         }}
