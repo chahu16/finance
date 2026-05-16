@@ -155,7 +155,9 @@ export default function App() {
   }, [serverRowsVirements]);
 
   useEffect(() => {
-    if (serverRowsFraisFixes) setRowsFraisFixesLocal(serverRowsFraisFixes);
+    if (serverRowsFraisFixes) {
+      setRowsFraisFixesLocal(serverRowsFraisFixes);
+    }
   }, [serverRowsFraisFixes]);
 
   // Etat pour gerer l'accordéon
@@ -438,12 +440,14 @@ export default function App() {
   // Synchronisation des lignes du serveur vers l'état local au chargement
   useEffect(() => {
     if (serverRowsDepensesRecettes) {
-      setRowsDepensesRecettes(() => {
+      setRowsDepensesRecettes((prev) => {
+        // On préserve les lignes temporaires (UUID avec tirets = en cours de saisie)
+        const lignesTemp = prev.filter(r => String(r.id).includes('-'));
         const aPreserver = lignesLocalesAjoutees.current.filter(r =>
           !serverRowsDepensesRecettes.some(s => s.id === r.id)
         );
         lignesLocalesAjoutees.current = aPreserver;
-        return [...aPreserver, ...serverRowsDepensesRecettes];
+        return [...lignesTemp, ...aPreserver, ...serverRowsDepensesRecettes];
       });
     }
   }, [serverRowsDepensesRecettes]);
