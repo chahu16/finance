@@ -19,6 +19,7 @@ import {
     GridRowEditStopReasons,
     GridActionsCellItem,
     useGridApiContext,
+    useGridApiRef,
 } from '@mui/x-data-grid';
 import { randomId } from '@mui/x-data-grid-generator';
 
@@ -77,8 +78,8 @@ function GridEditDateCell({ id, value, field, shouldAutoFocus, onCancel }) {
                                     });
                                     setTimeout(() => {
                                         // Remet le focus sur la première section (JJ)
-                                        const firstSection = container?.querySelector('[role="spinbutton"]');
-                                        if (firstSection) firstSection.focus();
+                                        const cell = apiRef.current.getCellElement(id, field);
+                                        if (cell) cell.focus();
                                     }, 50);
                                 } else {
                                     // 2ème Échap : annule la ligne
@@ -137,6 +138,7 @@ export default function FullFeaturedCrudGrid({
     initialRows = [],
     addButtonLabel,
 }) {
+    const apiRef = useGridApiRef();
     const [rows, setRows] = React.useState(initialRows);
     const [rowModesModel, setRowModesModel] = React.useState({});
     const isAnyRowEditing = Object.values(rowModesModel).some(
@@ -238,6 +240,7 @@ export default function FullFeaturedCrudGrid({
         <Box sx={{ height: 500, width: '100%', ...gridStyle }}>
             <DataGrid
                 localeText={frFR.components.MuiDataGrid.defaultProps.localeText}
+                apiRef={apiRef}
                 rows={rows}
                 columns={columns}
                 editMode="row"
@@ -246,6 +249,54 @@ export default function FullFeaturedCrudGrid({
                 onRowModesModelChange={setRowModesModel}
                 onRowEditStop={handleRowEditStop}
                 processRowUpdate={processRowUpdate}
+                onCellKeyDown={(params, event) => {
+                    if (event.key === "Tab" && rowModesModel[params.id]?.mode === GridRowModes.Edit) {
+                        const columnFields = columns
+                            .map((c) => c.field)
+                            .filter((f) => f !== "actions");
+                        const firstField = columnFields[0];
+
+                        if (params.field !== "actions" && !event.shiftKey) {
+                            const currentIndex = columnFields.indexOf(params.field);
+                            const nextField = columnFields[currentIndex + 1] || "actions";
+
+                            event.preventDefault();
+                            event.stopPropagation();
+
+                            apiRef.current.setCellFocus(params.id, nextField);
+
+                            setTimeout(() => {
+                                const nextCell = apiRef.current.getCellElement(params.id, nextField);
+                                const input = nextCell?.querySelector("input");
+                                if (input) {
+                                    input.focus();
+                                    input.select();
+                                }
+                            }, 20);
+                            return;
+                        }
+
+                        if (params.field === "actions" && !event.shiftKey) {
+                            const actionCell = apiRef.current.getCellElement(params.id, "actions");
+                            const buttons = actionCell ? Array.from(actionCell.querySelectorAll("button")) : [];
+                            const saveButton = buttons[0];
+                            const cancelButton = buttons[1];
+
+                            if (event.target === saveButton && cancelButton) {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                cancelButton.focus();
+                                return;
+                            }
+
+                            if (event.target === cancelButton || buttons.length <= 1) {
+                                event.preventDefault();
+                                event.stopPropagation();
+                                apiRef.current.setCellFocus(params.id, firstField);
+                            }
+                        }
+                    }
+                }}
                 showToolbar
                 slots={{ toolbar: EditToolbar }}
                 slotProps={{
