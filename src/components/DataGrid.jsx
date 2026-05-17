@@ -1,6 +1,11 @@
 import * as React from 'react';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
+import Dialog from '@mui/material/Dialog';
+import DialogActions from '@mui/material/DialogActions';
+import DialogContent from '@mui/material/DialogContent';
+import DialogContentText from '@mui/material/DialogContentText';
+import DialogTitle from '@mui/material/DialogTitle';
 import { frFR } from '@mui/x-data-grid/locales';
 import { gridStyle, addButtonStyle } from '../styles/GridStyles.js';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
@@ -142,6 +147,9 @@ export default function FullFeaturedCrudGrid({
     const apiRef = useGridApiRef();
     const [rows, setRows] = React.useState(initialRows);
     const [rowModesModel, setRowModesModel] = React.useState({});
+    const [openDeleteDialog, setOpenDeleteDialog] = React.useState(false);
+    const [rowToDelete, setRowToDelete] = React.useState(null);
+    const isDeleteDialogOpenRef = React.useRef(false);
     const isAnyRowEditing = Object.values(rowModesModel).some(
         (row) => row.mode === GridRowModes.Edit
     );
@@ -188,8 +196,26 @@ export default function FullFeaturedCrudGrid({
         setRowModesModel((prev) => ({ ...prev, [id]: { mode: GridRowModes.View } }));
     };
 
-    const handleDeleteClick = (id) => {
-        setRows((prev) => prev.filter((row) => row.id !== id));
+    const handleDeleteClick = React.useCallback((id) => {
+        const row = rows.find((r) => r.id === id);
+        setRowToDelete(row);
+        isDeleteDialogOpenRef.current = true;
+        setOpenDeleteDialog(true);
+    }, [rows]);
+
+    const handleConfirmDelete = () => {
+        if (rowToDelete) {
+            setRows((prev) => prev.filter((row) => row.id !== rowToDelete.id));
+            isDeleteDialogOpenRef.current = false;
+            setOpenDeleteDialog(false);
+            setRowToDelete(null);
+        }
+    };
+
+    const handleCancelDelete = () => {
+        isDeleteDialogOpenRef.current = false;
+        setOpenDeleteDialog(false);
+        setRowToDelete(null);
     };
 
     const handleCancelClick = (id) => {
@@ -246,10 +272,42 @@ export default function FullFeaturedCrudGrid({
                 ];
             },
         },
-    ], [customColumns, rowModesModel, handleEditClick]);
+    ], [customColumns, rowModesModel, handleEditClick, handleDeleteClick]);
 
     return (
         <Box sx={{ height: 500, width: '100%', ...gridStyle }}>
+            <Dialog
+                open={openDeleteDialog}
+                onClose={handleCancelDelete}
+                transitionDuration={0}
+                sx={{
+                    '& .MuiDialog-paper': {
+                        outline: 'none',
+                    },
+                    '& .MuiBackdrop-root': {
+                        backgroundColor: 'rgba(0, 0, 0, 0.2)',
+                    }
+                }}
+                onKeyDown={(event) => {
+                    if (event.key === 'Enter') {
+                        event.preventDefault();
+                        handleConfirmDelete();
+                    }
+                }}
+            >
+                <DialogTitle>Confirmer la suppression</DialogTitle>
+                <DialogContent>
+                    <DialogContentText>
+                        Voulez-vous vraiment supprimer <strong>{rowToDelete?.description}</strong> ?
+                    </DialogContentText>
+                </DialogContent>
+                <DialogActions>
+                    <Button onClick={handleCancelDelete} color="inherit">Annuler</Button>
+                    <Button onClick={handleConfirmDelete} color="error" variant="contained" autoFocus>
+                        Supprimer
+                    </Button>
+                </DialogActions>
+            </Dialog>
             <DataGrid
                 localeText={frFR.components.MuiDataGrid.defaultProps.localeText}
                 apiRef={apiRef}
@@ -260,6 +318,11 @@ export default function FullFeaturedCrudGrid({
                 rowModesModel={rowModesModel}
                 onRowModesModelChange={setRowModesModel}
                 onRowEditStop={handleRowEditStop}
+                onRowEditStart={(params, event) => {
+                    if (isDeleteDialogOpenRef.current || isAnyRowEditing) {
+                        event.defaultMuiPrevented = true;
+                    }
+                }}
                 processRowUpdate={processRowUpdate}
                 onCellDoubleClick={(params, event) => {
                     if (!isAnyRowEditing) {
@@ -282,6 +345,12 @@ export default function FullFeaturedCrudGrid({
                     }
                 }}
                 onCellKeyDown={(params, event) => {
+                    // Suppr sur ligne en lecture → dialogue suppression
+                    if (event.key === "Delete" && !rowModesModel[params.id]) {
+                        event.preventDefault();
+                        handleDeleteClick(params.id);
+                        return;
+                    }
                     // Échap sur champ en édition (hors date géré dans GridEditDateCell)
                     if (event.key === "Escape" && rowModesModel[params.id]?.mode === GridRowModes.Edit && params.colDef.type !== 'date') {
                         event.preventDefault();
