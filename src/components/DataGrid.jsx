@@ -261,19 +261,63 @@ export default function FullFeaturedCrudGrid({
                 onRowModesModelChange={setRowModesModel}
                 onRowEditStop={handleRowEditStop}
                 processRowUpdate={processRowUpdate}
+                onCellDoubleClick={(params, event) => {
+                    if (!isAnyRowEditing) {
+                        event.stopPropagation();
+                        setRowModesModel((prev) => ({
+                            ...prev,
+                            [params.id]: { mode: GridRowModes.Edit, fieldToFocus: params.field },
+                        }));
+                        setTimeout(() => {
+                            const cell = apiRef.current.getCellElement(params.id, params.field);
+                            // Si c'est une date → focus sur la première section (DD)
+                            if (params.colDef.type === 'date') {
+                                const firstSection = cell?.querySelector('[role="spinbutton"]');
+                                if (firstSection) firstSection.focus();
+                            } else {
+                                const input = cell?.querySelector('input');
+                                if (input) { input.focus(); input.select(); }
+                            }
+                        }, 50);
+                    }
+                }}
                 onCellKeyDown={(params, event) => {
+                    // Échap sur champ en édition (hors date géré dans GridEditDateCell)
+                    if (event.key === "Escape" && rowModesModel[params.id]?.mode === GridRowModes.Edit && params.colDef.type !== 'date') {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        event.defaultMuiPrevented = true;
+
+                        const row = apiRef.current.getRowWithUpdatedValues(params.id, params.field);
+                        const currentValue = row[params.field];
+                        const isEmpty = currentValue === null || currentValue === undefined || String(currentValue).trim() === "" || currentValue === 0;
+
+                        if (!isEmpty) {
+                            // 1er Échap : vide le champ
+                            apiRef.current.setEditCellValue({ id: params.id, field: params.field, value: params.colDef.type === 'number' ? 0 : '' });
+                        } else {
+                            // 2ème Échap : annule la ligne
+                            handleCancelClick(params.id);
+                        }
+                        return;
+                    }
                     // Entrée sur ligne en lecture → mode édition + focus
                     if (event.key === "Enter" && rowModesModel[params.id]?.mode !== GridRowModes.Edit) {
                         event.preventDefault();
                         event.stopPropagation();
                         setRowModesModel((prev) => ({
                             ...prev,
-                            [params.id]: { mode: GridRowModes.Edit, fieldToFocus: fieldFocusEdit || customColumns[0]?.field },
+                            [params.id]: { mode: GridRowModes.Edit, fieldToFocus: params.field },
                         }));
                         setTimeout(() => {
-                            const cell = apiRef.current.getCellElement(params.id, fieldFocusEdit || customColumns[0]?.field);
-                            const input = cell?.querySelector('input');
-                            if (input) { input.focus(); input.select(); }
+                            const cell = apiRef.current.getCellElement(params.id, params.field);
+                            if (params.colDef.type === 'date') {
+                                const firstSection = cell?.querySelector('[role="spinbutton"]');
+                                if (firstSection) firstSection.focus();
+                            } else {
+                                const input = cell?.querySelector('input');
+                                if (input) { input.focus(); input.select(); }
+                            }
                         }, 50);
                         return;
                     }
