@@ -30,6 +30,11 @@ export const gridStyle = {
     "& .MuiOutlinedInput-notchedOutline": {
         border: "none !important",
     },
+    // Style cellule en erreur
+    "& .cell-error": {
+        backgroundColor: "rgba(211, 47, 47, 0.08) !important",
+        boxShadow: "inset 0 0 0 1px rgba(211, 47, 47, 0.3) !important",
+    },
     // Supprime le trait sous le DatePicker
     "& .MuiPickersInputBase-root:before": {
         borderBottom: "none !important",
@@ -39,6 +44,11 @@ export const gridStyle = {
     },
     "& .MuiPickersInputBase-root": {
         borderBottom: "none !important",
+    },
+    // Cellule en erreur même quand focusée
+    "& .cell-error.MuiDataGrid-cell--editing": {
+        backgroundColor: "rgba(211, 47, 47, 0.08) !important",
+        boxShadow: "inset 0 0 0 1px rgba(211, 47, 47, 0.3) !important",
     },
 };
 export const addButtonStyle = {

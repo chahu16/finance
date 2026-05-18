@@ -27,6 +27,7 @@ import {
     useGridApiRef,
 } from '@mui/x-data-grid';
 import { randomId } from '@mui/x-data-grid-generator';
+import { getRowErrors } from './utils/GridValidation.js';
 
 function GridEditDateCell({ id, value, field, shouldAutoFocus, onCancel }) {
     const apiRef = useGridApiContext();
@@ -62,32 +63,25 @@ function GridEditDateCell({ id, value, field, shouldAutoFocus, onCancel }) {
                                 event.stopPropagation();
                                 event.preventDefault();
 
-                                // Récupère toutes les sections (jour, mois, année)
                                 let container = event.target;
                                 while (container && !container.className?.includes?.('MuiPickersSectionList-root')) {
                                     container = container.parentElement;
                                 }
                                 const sections = container?.querySelectorAll('[role="spinbutton"]');
                                 const values = sections ? Array.from(sections).map(s => s.getAttribute('aria-valuetext')) : [];
-
-                                // Date vide = toutes les sections sont "Empty" ou null
                                 const estVide = values.every(v => v === 'Empty' || v === null);
 
                                 if (!estVide) {
-                                    // 1er Échap : vide la date visuellement et dans le state MUI
                                     apiRef.current.setEditCellValue({ id, field, value: null });
-                                    // Force le vidage visuel de chaque section
                                     sections && Array.from(sections).forEach((s, i) => {
                                         s.setAttribute('aria-valuetext', 'Empty');
                                         s.textContent = i === 0 ? 'DD' : i === 1 ? 'MM' : 'YYYY';
                                     });
                                     setTimeout(() => {
-                                        // Remet le focus sur la première section (JJ)
                                         const cell = apiRef.current.getCellElement(id, field);
                                         if (cell) cell.focus();
                                     }, 50);
                                 } else {
-                                    // 2ème Échap : annule la ligne
                                     if (onCancel) onCancel(id);
                                 }
                             }
@@ -111,9 +105,10 @@ function GridEditDateCell({ id, value, field, shouldAutoFocus, onCancel }) {
     );
 }
 
-function EditToolbar({ setRows, setRowModesModel, addButtonLabel, emptyRow, fieldFocusAdd, isAnyRowEditing }) {
+function EditToolbar({ setRows, setRowModesModel, addButtonLabel, emptyRow, fieldFocusAdd, isAnyRowEditing, setShowErrors }) {
     const handleClick = () => {
         if (isAnyRowEditing) return;
+        setShowErrors(false);
         const id = randomId();
         setRows((oldRows) => [{ ...emptyRow, id, isNew: true }, ...oldRows]);
         setRowModesModel((oldModel) => ({
@@ -143,13 +138,18 @@ export default function FullFeaturedCrudGrid({
     initialRows = [],
     addButtonLabel,
     fieldFocusEdit = null,
+    validateRow = null,
 }) {
     const apiRef = useGridApiRef();
     const [rows, setRows] = React.useState(initialRows);
     const [rowModesModel, setRowModesModel] = React.useState({});
     const [openDeleteDialog, setOpenDeleteDialog] = React.useState(false);
     const [rowToDelete, setRowToDelete] = React.useState(null);
+    const [showErrors, setShowErrors] = React.useState(false);
+
     const isDeleteDialogOpenRef = React.useRef(false);
+    const lastChequeEnCoursRef = React.useRef(null);
+
     const isAnyRowEditing = Object.values(rowModesModel).some(
         (row) => row.mode === GridRowModes.Edit
     );
@@ -171,7 +171,26 @@ export default function FullFeaturedCrudGrid({
         [customColumns]
     );
 
+    // Fix MUI v8 : forcer le re-render de la ligne quand une checkbox change
+    React.useEffect(() => {
+        if (!apiRef.current) return;
+        const unsubscribe = apiRef.current.store.subscribe(() => {
+            const editRows = apiRef.current.state.editRows;
+            const editingId = Object.keys(editRows)[0];
+            if (!editingId || !showErrors) return;
+            const chequeEnCours = editRows[editingId]?.chequeEnCours?.value;
+            if (chequeEnCours === undefined) return;
+            if (chequeEnCours === lastChequeEnCoursRef.current) return;
+            lastChequeEnCoursRef.current = chequeEnCours;
+            setTimeout(() => {
+                apiRef.current.updateRows([{ id: editingId }]);
+            }, 0);
+        });
+        return () => unsubscribe();
+    }, [apiRef, showErrors]);
+
     const handleEditClick = React.useCallback((id) => {
+        setShowErrors(false);
         setRowModesModel((prev) => ({
             ...prev,
             [id]: { mode: GridRowModes.Edit, fieldToFocus: fieldFocusEdit || customColumns[0]?.field }
@@ -188,6 +207,7 @@ export default function FullFeaturedCrudGrid({
             event.defaultMuiPrevented = true;
         }
         if (params.reason === GridRowEditStopReasons.escapeKeyDown) {
+            event.defaultMuiPrevented = true;
             handleCancelClick(params.id);
         }
     };
@@ -219,29 +239,70 @@ export default function FullFeaturedCrudGrid({
     };
 
     const handleCancelClick = (id) => {
-        setRowModesModel((prev) => ({
-            ...prev,
-            [id]: { mode: GridRowModes.View, ignoreModifications: true },
-        }));
+        setShowErrors(false);
         setRows((prev) => {
             const editedRow = prev.find((row) => row.id === id);
-            if (editedRow?.isNew) return prev.filter((row) => row.id !== id);
+            if (editedRow?.isNew) {
+                setRowModesModel((prev) => {
+                    const next = { ...prev };
+                    delete next[id];
+                    return next;
+                });
+                return prev.filter((row) => row.id !== id);
+            }
+            setRowModesModel((prev) => ({
+                ...prev,
+                [id]: { mode: GridRowModes.View, ignoreModifications: true },
+            }));
             return prev;
         });
     };
 
-    const processRowUpdate = (newRow) => {
+    const processRowUpdate = (newRow, oldRow) => {
+        // Si la ligne n'existe plus (annulation d'une nouvelle ligne)
+        const rowExists = rows.find((row) => row.id === newRow.id);
+        if (!rowExists) return oldRow;
+
+        const errors = getRowErrors(newRow, columns, validateRow);
+        const hasError = Object.keys(errors).length > 0;
+
+        if (hasError) {
+            setShowErrors(true);
+            const messages = columns
+                .filter(col => errors[col.field] && typeof errors[col.field] === 'string')
+                .map(col => errors[col.field])
+                .join(' · ');
+            const error = new Error(messages || "Validation échouée");
+            error.isValidationError = true;
+            throw error;
+        }
+
+        setShowErrors(false);
         const updatedRow = { ...newRow, isNew: false };
         setRows((prev) => prev.map((row) => (row.id === newRow.id ? updatedRow : row)));
         return updatedRow;
     };
 
-    // Ajout colonne Actions
+    // Colonnes avec cellClassName et renderEditCell
     const columns = React.useMemo(() => [
         ...customColumns.map((col) => {
-            if (col.type === 'date') {
-                return {
-                    ...col,
+            return {
+                ...col,
+                cellClassName: (params) => {
+                    if (!showErrors) return col.cellClassName || "";
+                    const editRowsState = apiRef.current?.state?.editRows;
+                    const editingRowState = editRowsState?.[params.id];
+                    const row = apiRef.current?.getRow(params.id) || {};
+                    const liveRow = { ...row };
+                    if (editingRowState) {
+                        Object.keys(editingRowState).forEach((field) => {
+                            liveRow[field] = editingRowState[field].value;
+                        });
+                    }
+                    const errors = getRowErrors(liveRow, customColumns, validateRow);
+                    return errors[col.field] ? "cell-error" : col.cellClassName || "";
+                },
+                ...(col.type === 'date' ? {
                     renderEditCell: (params) => (
                         <GridEditDateCell
                             {...params}
@@ -249,9 +310,8 @@ export default function FullFeaturedCrudGrid({
                             onCancel={handleCancelClick}
                         />
                     ),
-                };
-            }
-            return col;
+                } : {}),
+            };
         }),
         {
             field: 'actions',
@@ -272,7 +332,7 @@ export default function FullFeaturedCrudGrid({
                 ];
             },
         },
-    ], [customColumns, rowModesModel, handleEditClick, handleDeleteClick]);
+    ], [customColumns, rowModesModel, handleEditClick, handleDeleteClick, apiRef, showErrors, validateRow]);
 
     return (
         <Box sx={{ height: 500, width: '100%', ...gridStyle }}>
@@ -281,12 +341,8 @@ export default function FullFeaturedCrudGrid({
                 onClose={handleCancelDelete}
                 transitionDuration={0}
                 sx={{
-                    '& .MuiDialog-paper': {
-                        outline: 'none',
-                    },
-                    '& .MuiBackdrop-root': {
-                        backgroundColor: 'rgba(0, 0, 0, 0.2)',
-                    }
+                    '& .MuiDialog-paper': { outline: 'none' },
+                    '& .MuiBackdrop-root': { backgroundColor: 'rgba(0, 0, 0, 0.2)' }
                 }}
                 onKeyDown={(event) => {
                     if (event.key === 'Enter') {
@@ -324,16 +380,19 @@ export default function FullFeaturedCrudGrid({
                     }
                 }}
                 processRowUpdate={processRowUpdate}
+                onProcessRowUpdateError={(error) => {
+                    console.log("🔍 erreur validation:", error.message);
+                }}
                 onCellDoubleClick={(params, event) => {
                     if (!isAnyRowEditing) {
                         event.stopPropagation();
+                        setShowErrors(false);
                         setRowModesModel((prev) => ({
                             ...prev,
                             [params.id]: { mode: GridRowModes.Edit, fieldToFocus: params.field },
                         }));
                         setTimeout(() => {
                             const cell = apiRef.current.getCellElement(params.id, params.field);
-                            // Si c'est une date → focus sur la première section (DD)
                             if (params.colDef.type === 'date') {
                                 const firstSection = cell?.querySelector('[role="spinbutton"]');
                                 if (firstSection) firstSection.focus();
@@ -345,35 +404,60 @@ export default function FullFeaturedCrudGrid({
                     }
                 }}
                 onCellKeyDown={(params, event) => {
-                    // Suppr sur ligne en lecture → dialogue suppression
                     if (event.key === "Delete" && !rowModesModel[params.id]) {
                         event.preventDefault();
                         handleDeleteClick(params.id);
                         return;
                     }
-                    // Échap sur champ en édition (hors date géré dans GridEditDateCell)
                     if (event.key === "Escape" && rowModesModel[params.id]?.mode === GridRowModes.Edit && params.colDef.type !== 'date') {
                         event.preventDefault();
                         event.stopPropagation();
                         event.defaultMuiPrevented = true;
 
-                        const row = apiRef.current.getRowWithUpdatedValues(params.id, params.field);
-                        const currentValue = row[params.field];
-                        const isEmpty = currentValue === null || currentValue === undefined || String(currentValue).trim() === "" || currentValue === 0;
+                        const originalRow = apiRef.current.getRow(params.id);
+                        const currentRow = apiRef.current.getRowWithUpdatedValues(params.id, params.field);
+                        const currentValue = currentRow[params.field];
+                        const originalValue = originalRow[params.field];
+                        const isNew = originalRow.isNew;
 
-                        if (!isEmpty) {
-                            // 1er Échap : vide le champ
-                            apiRef.current.setEditCellValue({ id: params.id, field: params.field, value: params.colDef.type === 'number' ? 0 : '' });
+                        // Valeur vide = null, undefined, "" ou 0
+                        const isEmpty = currentValue === null || currentValue === undefined || String(currentValue).trim() === "" || currentValue === 0;
+                        // Valeur originale vide = même condition
+
+                        if (isNew) {
+                            // Nouvelle ligne : vide le champ si pas vide, sinon annule
+                            if (!isEmpty) {
+                                apiRef.current.setEditCellValue({ id: params.id, field: params.field, value: params.colDef.type === 'number' ? 0 : '' });
+                            } else {
+                                handleCancelClick(params.id);
+                            }
                         } else {
-                            // 2ème Échap : annule la ligne
-                            handleCancelClick(params.id);
+                            // Ligne existante : remet la valeur originale si modifiée, sinon annule
+                            if (currentValue !== originalValue) {
+                                apiRef.current.setEditCellValue({ id: params.id, field: params.field, value: originalValue });
+                                setTimeout(() => {
+                                    const cell = apiRef.current.getCellElement(params.id, params.field);
+                                    const input = cell?.querySelector('input');
+                                    if (input) { input.focus(); input.select(); }
+                                }, 20);
+                            } else {
+                                handleCancelClick(params.id);
+                            }
                         }
                         return;
                     }
-                    // Entrée sur ligne en lecture → mode édition + focus
+                    if (event.key === "Enter" && rowModesModel[params.id]?.mode === GridRowModes.Edit && params.colDef.type === 'boolean') {
+                        event.preventDefault();
+                        event.stopPropagation();
+                        event.defaultMuiPrevented = true;
+                        const row = apiRef.current.getRowWithUpdatedValues(params.id, params.field);
+                        apiRef.current.setEditCellValue({ id: params.id, field: params.field, value: !row[params.field] });
+                        return;
+                    }
                     if (event.key === "Enter" && rowModesModel[params.id]?.mode !== GridRowModes.Edit) {
                         event.preventDefault();
                         event.stopPropagation();
+                        setShowErrors(false);
                         setRowModesModel((prev) => ({
                             ...prev,
                             [params.id]: { mode: GridRowModes.Edit, fieldToFocus: params.field },
@@ -390,8 +474,6 @@ export default function FullFeaturedCrudGrid({
                         }, 50);
                         return;
                     }
-
-                    // Entrée sur champ en édition → valide la ligne
                     if (event.key === "Enter" && rowModesModel[params.id]?.mode === GridRowModes.Edit) {
                         event.preventDefault();
                         event.stopPropagation();
@@ -448,7 +530,7 @@ export default function FullFeaturedCrudGrid({
                 showToolbar
                 slots={{ toolbar: EditToolbar }}
                 slotProps={{
-                    toolbar: { setRows, setRowModesModel, addButtonLabel, emptyRow, fieldFocusAdd, isAnyRowEditing },
+                    toolbar: { setRows, setRowModesModel, addButtonLabel, emptyRow, fieldFocusAdd, isAnyRowEditing, setShowErrors },
                 }}
             />
         </Box>
