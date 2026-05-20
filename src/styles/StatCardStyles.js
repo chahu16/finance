@@ -1,3 +1,9 @@
+const PALETTE = {
+    vert:   { border: '#4caf50', icon: '#4caf50' },
+    orange: { border: '#ff9800', icon: '#ff9800' },
+    rouge:  { border: '#f44336', icon: '#f44336' },
+};
+
 export const statCardsContainerSx = {
     display: 'flex',
     flexWrap: 'wrap',
@@ -5,15 +11,15 @@ export const statCardsContainerSx = {
     mb: 3,
 };
 
-export const cardSx = {
+export const cardSx = (color = 'vert') => ({
     backgroundColor: '#fff',
     borderRadius: '8px',
     boxShadow: '0 2px 8px rgba(0,0,0,0.12)',
-    borderLeft: '4px solid #4caf50',
+    borderLeft: `4px solid ${PALETTE[color].border}`,
     padding: '14px 18px',
     minWidth: 220,
     flex: '0 1 auto',
-};
+});
 
 export const headerSx = {
     display: 'flex',
@@ -22,10 +28,10 @@ export const headerSx = {
     mb: 1.5,
 };
 
-export const iconSx = {
-    color: '#4caf50',
+export const iconSx = (color = 'vert') => ({
+    color: PALETTE[color].icon,
     fontSize: '1.1rem',
-};
+});
 
 export const titleSx = {
     fontWeight: 600,

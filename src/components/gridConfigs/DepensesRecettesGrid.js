@@ -132,6 +132,7 @@ export const initialRows = [
         fraisFixe: false,
         chequeEnCours: false,
         depenseRecettesAMasquer: false,
+        pourcentageMoi: 50,
     },
     {
         id: '2',
@@ -145,6 +146,7 @@ export const initialRows = [
         fraisFixe: false,
         chequeEnCours: false,
         depenseRecettesAMasquer: false,
+        pourcentageMoi: 60,
     },
     {
         id: '3',
@@ -158,6 +160,7 @@ export const initialRows = [
         fraisFixe: true,
         chequeEnCours: false,
         depenseRecettesAMasquer: false,
+        pourcentageMoi: 50,
     },
     {
         id: '4',
@@ -171,6 +174,7 @@ export const initialRows = [
         fraisFixe: false,
         chequeEnCours: false,
         depenseRecettesAMasquer: false,
+        pourcentageMoi: 100,
     },
     // ── Axa Banque ───────────────────────────────────────────────────────────
     {

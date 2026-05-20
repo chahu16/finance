@@ -11,37 +11,58 @@ import {
 const fmtEuro = (value) =>
     `${Number(value).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`;
 
-function StatCard({ compte, rows }) {
+function getCardColor(instantT, seuil, seuilOrange) {
+    const seuilVal = seuil ?? 0;
+    const orangeThreshold = seuilVal * ((seuilOrange ?? 0) / 100);
+    if (instantT > seuilVal) return 'vert';
+    if (instantT > orangeThreshold) return 'orange';
+    return 'rouge';
+}
+
+function StatCard({ compte, rows, compteData }) {
     const now = new Date();
     const currentMonth = now.getMonth();
     const currentYear = now.getFullYear();
     const monthName = now.toLocaleString('fr-FR', { month: 'long' });
     const monthLabel = monthName.charAt(0).toUpperCase() + monthName.slice(1);
 
-    const moisCourant = rows
-        .filter(r => {
-            if (!r.dateDepensesRecettes) return false;
-            const d = new Date(r.dateDepensesRecettes);
-            return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
-        })
-        .reduce((acc, r) => acc + (r.recettes || 0) - (r.depenses || 0), 0);
+    const soldeInitial = compteData.soldeInitial ?? 0;
+    const sommeDeCote = compteData.sommeDeCote ?? 0;
+    const seuil = compteData.seuil ?? 0;
+    const seuilOrange = compteData.seuilOrange ?? 0;
 
-    const soldeTheorique = rows
-        .reduce((acc, r) => acc + (r.recettes || 0) - (r.depenses || 0), 0);
+    const soldeMoisCourant = soldeInitial
+        + rows
+            .filter(r => {
+                if (r.depenseRecettesAMasquer) return false;
+                if (!r.dateDepensesRecettes) return false;
+                const d = new Date(r.dateDepensesRecettes);
+                return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
+            })
+            .reduce((acc, r) => acc + (r.recettes || 0) - (r.depenses || 0), 0)
+        - sommeDeCote;
 
-    const instantT = rows
-        .filter(r => r.dateDepensesRecettes != null)
-        .reduce((acc, r) => acc + (r.recettes || 0) - (r.depenses || 0), 0);
+    const soldeTheorique = soldeInitial
+        + rows.reduce((acc, r) => acc + (r.recettes || 0) - (r.depenses || 0), 0)
+        - sommeDeCote;
+
+    const instantT = soldeInitial
+        + rows
+            .filter(r => r.dateDepensesRecettes != null)
+            .reduce((acc, r) => acc + (r.recettes || 0) - (r.depenses || 0), 0)
+        - sommeDeCote;
+
+    const color = getCardColor(instantT, seuil, seuilOrange);
 
     return (
-        <Box sx={cardSx}>
+        <Box sx={cardSx(color)}>
             <Box sx={headerSx}>
-                <AccountBalanceIcon sx={iconSx} />
+                <AccountBalanceIcon sx={iconSx(color)} />
                 <Typography sx={titleSx}>{compte}</Typography>
             </Box>
             <Box sx={rowSx}>
                 <Typography sx={labelSx}>Mois de {monthLabel} :</Typography>
-                <Typography sx={valueSx}>{fmtEuro(moisCourant)}</Typography>
+                <Typography sx={valueSx}>{fmtEuro(soldeMoisCourant)}</Typography>
             </Box>
             <Box sx={rowSx}>
                 <Typography sx={labelSx}>Solde théorique :</Typography>

@@ -113,7 +113,7 @@ export const initialRows = [
         sommeDeCote: 0,
         seuil: 100,
         seuilOrange: 30,
-        compteJoint: true,
+        compteJoint: false,
         archived: false,
     },
     // Compte archivé — ne doit PAS apparaître dans le singleSelect dépenses/recettes

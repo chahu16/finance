@@ -780,7 +780,7 @@ export default function FullFeaturedCrudGrid({
             <DataGrid
                 localeText={frFR.components.MuiDataGrid.defaultProps.localeText}
                 apiRef={apiRef}
-                rows={rowFilter ? rows.filter(rowFilter) : rows}
+                rows={rowFilter ? rows.filter(r => r.isNew || rowFilter(r)) : rows}
                 columns={columns}
                 editMode="row"
                 density="compact"
