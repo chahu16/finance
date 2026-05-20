@@ -155,7 +155,7 @@ function parseCSVValue(value, type) {
 }
 
 // ─── Barre d'outils avec bouton Ajouter ───────────────────────────────────────
-function EditToolbar({ setRows, setRowModesModel, addButtonLabel, emptyRow, fieldFocusAdd, isAnyRowEditing, setShowErrors, customColumns, validateRow, showSnackbar }) {
+function EditToolbar({ setRows, setRowModesModel, addButtonLabel, emptyRow, fieldFocusAdd, isAnyRowEditing, setShowErrors, customColumns, validateRow, showSnackbar, toolbarSlotEnd }) {
     const fileInputRef = React.useRef(null);
     const [errorDialog, setErrorDialog] = React.useState({ open: false, rows: [], imported: 0 });
 
@@ -292,17 +292,6 @@ function EditToolbar({ setRows, setRowModesModel, addButtonLabel, emptyRow, fiel
                 <Button
                     color="primary"
                     variant="outlined"
-                    startIcon={<UploadFileIcon />}
-                    disabled={isAnyRowEditing}
-                    onClick={handleImportClick}
-                    size="small"
-                    sx={importButtonStyle}
-                >
-                    Importer CSV
-                </Button>
-                <Button
-                    color="primary"
-                    variant="outlined"
                     startIcon={<AddIcon />}
                     disabled={isAnyRowEditing}
                     onClick={handleClick}
@@ -311,6 +300,18 @@ function EditToolbar({ setRows, setRowModesModel, addButtonLabel, emptyRow, fiel
                 >
                     {addButtonLabel || 'Ajouter'}
                 </Button>
+                <Button
+                    color="primary"
+                    variant="outlined"
+                    startIcon={<UploadFileIcon />}
+                    disabled={isAnyRowEditing}
+                    onClick={handleImportClick}
+                    size="small"
+                    sx={importButtonStyle}
+                >
+                    Importer CSV
+                </Button>
+                {toolbarSlotEnd}
             </GridToolbarContainer>
         </>
     );
@@ -329,12 +330,19 @@ export default function FullFeaturedCrudGrid({
     onFieldChange = null,
     onRowsChange = null,
     height = 500,
+    showCopy = true,
+    extraRowActions = [],
+    extraRowDefaults = {},
+    rowFilter = null,
+    toolbarSlotEnd = null,
+    resolveDelete = null,
 }) {
     const apiRef = useGridApiRef();
     const [rows, setRows] = React.useState(initialRows);
     const [rowModesModel, setRowModesModel] = React.useState({});
     const [openDeleteDialog, setOpenDeleteDialog] = React.useState(false);
     const [rowToDelete, setRowToDelete] = React.useState(null);
+    const [deleteResolution, setDeleteResolution] = React.useState(null);
     const [showErrors, setShowErrors] = React.useState(false);
     const [snackbar, setSnackbar] = React.useState({ open: false, message: '', severity: 'success' });
 
@@ -363,7 +371,7 @@ export default function FullFeaturedCrudGrid({
     // ─── Dérivés ──────────────────────────────────────────────────────────────
     const isAnyRowEditing = Object.values(rowModesModel).some(row => row.mode === GridRowModes.Edit);
 
-    // Ligne vide construite depuis la définition des colonnes
+    // Ligne vide construite depuis la définition des colonnes + champs extra (non-colonnes)
     const emptyRow = React.useMemo(() => {
         const obj = {};
         customColumns.forEach((col) => {
@@ -371,8 +379,8 @@ export default function FullFeaturedCrudGrid({
             else if (col.type === 'boolean') obj[col.field] = false;
             else obj[col.field] = '';
         });
-        return obj;
-    }, [customColumns]);
+        return { ...obj, ...extraRowDefaults };
+    }, [customColumns, extraRowDefaults]);
 
     // Premier champ à focuser lors d'un ajout (marqué isInitialFocus ou premier de la liste)
     const fieldFocusAdd = React.useMemo(
@@ -464,17 +472,26 @@ export default function FullFeaturedCrudGrid({
     };
 
     const handleDeleteClick = React.useCallback((id) => {
-        setRowToDelete(rows.find((r) => r.id === id));
+        const row = rows.find((r) => r.id === id);
+        const resolution = resolveDelete ? resolveDelete(row) : { action: 'delete' };
+        setRowToDelete(row);
+        setDeleteResolution(resolution);
         isDeleteDialogOpenRef.current = true;
         setOpenDeleteDialog(true);
-    }, [rows]);
+    }, [rows, resolveDelete]);
 
     const handleConfirmDelete = () => {
         if (rowToDelete) {
-            setRows((prev) => prev.filter((row) => row.id !== rowToDelete.id));
+            if (deleteResolution?.action === 'archive') {
+                setRows((prev) => prev.map((r) => r.id === rowToDelete.id ? { ...r, archived: true } : r));
+                showSnackbar(deleteResolution.message || 'Élément archivé', 'info');
+            } else {
+                setRows((prev) => prev.filter((row) => row.id !== rowToDelete.id));
+            }
             isDeleteDialogOpenRef.current = false;
             setOpenDeleteDialog(false);
             setRowToDelete(null);
+            setDeleteResolution(null);
         }
     };
 
@@ -482,6 +499,7 @@ export default function FullFeaturedCrudGrid({
         isDeleteDialogOpenRef.current = false;
         setOpenDeleteDialog(false);
         setRowToDelete(null);
+        setDeleteResolution(null);
     };
 
     const handleCancelClick = React.useCallback((id) => {
@@ -590,16 +608,30 @@ export default function FullFeaturedCrudGrid({
                     return [
                         <GridActionsCellItem icon={<SaveIcon />} label="Save" onClick={() => handleSaveClick(id)} sx={{ color: 'primary.main' }} />,
                         <GridActionsCellItem icon={<CancelIcon />} label="Cancel" onClick={() => handleCancelClick(id)} color="inherit" />,
+                        ...extraRowActions
+                            .filter(a => a.showWhenEditing)
+                            .map(a => {
+                                const row = rows.find(r => r.id === id);
+                                const isDisabled = a.disabled ? a.disabled(row) : false;
+                                return <GridActionsCellItem key={a.label} icon={a.icon} label={a.label} onClick={() => a.onClick(id, setRows, showSnackbar)} color={a.color || 'inherit'} disabled={isDisabled} />;
+                            }),
                     ];
                 }
                 return [
-                    <GridActionsCellItem icon={<ContentCopyIcon />} label="Copy" onClick={() => handleCopyClick(id)} color="inherit" />,
-                    <GridActionsCellItem icon={<EditIcon />} label="Edit" onClick={() => handleEditClick(id)} color="inherit" />,
-                    <GridActionsCellItem icon={<DeleteIcon />} label="Delete" onClick={() => handleDeleteClick(id)} color="inherit" />,
+                    ...(showCopy ? [<GridActionsCellItem key="copy" icon={<ContentCopyIcon />} label="Copy" onClick={() => handleCopyClick(id)} color="inherit" />] : []),
+                    <GridActionsCellItem key="edit" icon={<EditIcon />} label="Edit" onClick={() => handleEditClick(id)} color="inherit" />,
+                    ...extraRowActions
+                        .filter(a => !a.showWhenEditing)
+                        .map(a => {
+                            const row = rows.find(r => r.id === id);
+                            const isDisabled = a.disabled ? a.disabled(row) : false;
+                            return <GridActionsCellItem key={a.label} icon={a.icon} label={a.label} onClick={() => a.onClick(id, setRows, showSnackbar)} color={a.color || 'inherit'} disabled={isDisabled} />;
+                        }),
+                    <GridActionsCellItem key="delete" icon={<DeleteIcon />} label="Delete" onClick={() => handleDeleteClick(id)} color="inherit" />,
                 ];
             },
         },
-    ], [customColumns, rowModesModel, handleEditClick, handleDeleteClick, handleCopyClick, apiRef, showErrors, validateRow, handleCancelClick]);
+    ], [customColumns, rowModesModel, handleEditClick, handleDeleteClick, handleCopyClick, apiRef, showErrors, validateRow, handleCancelClick, showCopy, extraRowActions, rows, setRows, showSnackbar]);
 
     // ─── Gestion clavier sur les cellules ─────────────────────────────────────
     const handleCellKeyDown = React.useCallback((params, event) => {
@@ -709,26 +741,38 @@ export default function FullFeaturedCrudGrid({
     // ─── Rendu ────────────────────────────────────────────────────────────────
     return (
         <Box sx={{ height, width: '100%' }}>
-            {/* Dialogue de confirmation de suppression */}
+            {/* Dialogue de confirmation de suppression / archivage */}
             <Dialog
                 open={openDeleteDialog}
                 onClose={handleCancelDelete}
                 transitionDuration={0}
                 sx={deleteDialogSx}
                 onKeyDown={(event) => {
-                    if (event.key === 'Enter') { event.preventDefault(); handleConfirmDelete(); }
+                    if (event.key === 'Enter') { event.preventDefault(); event.stopPropagation(); handleConfirmDelete(); }
+                    if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); handleCancelDelete(); }
                 }}
             >
-                <DialogTitle>Confirmer la suppression</DialogTitle>
+                <DialogTitle>
+                    {deleteResolution?.action === 'archive' ? "Confirmer l'archivage" : 'Confirmer la suppression'}
+                </DialogTitle>
                 <DialogContent>
                     <DialogContentText>
-                        Voulez-vous vraiment supprimer <strong>{rowToDelete?.[rowDisplayField]}</strong> ?
+                        {deleteResolution?.action === 'archive'
+                            ? (deleteResolution.dialogText ?? <>
+                                <strong>{rowToDelete?.[rowDisplayField]}</strong> sera archivé et non supprimé.
+                              </>)
+                            : <>Voulez-vous vraiment supprimer <strong>{rowToDelete?.[rowDisplayField]}</strong> ?</>
+                        }
                     </DialogContentText>
                 </DialogContent>
                 <DialogActions>
                     <Button onClick={handleCancelDelete} color="inherit">Annuler</Button>
-                    <Button onClick={handleConfirmDelete} color="error" variant="contained" autoFocus>
-                        Supprimer
+                    <Button
+                        onClick={handleConfirmDelete}
+                        color={deleteResolution?.action === 'archive' ? 'warning' : 'error'}
+                        variant="contained"
+                    >
+                        {deleteResolution?.action === 'archive' ? 'Archiver' : 'Supprimer'}
                     </Button>
                 </DialogActions>
             </Dialog>
@@ -736,7 +780,7 @@ export default function FullFeaturedCrudGrid({
             <DataGrid
                 localeText={frFR.components.MuiDataGrid.defaultProps.localeText}
                 apiRef={apiRef}
-                rows={rows}
+                rows={rowFilter ? rows.filter(rowFilter) : rows}
                 columns={columns}
                 editMode="row"
                 density="compact"
@@ -764,7 +808,7 @@ export default function FullFeaturedCrudGrid({
                 showToolbar
                 slots={{ toolbar: EditToolbar }}
                 slotProps={{
-                    toolbar: { setRows, setRowModesModel, addButtonLabel, emptyRow, fieldFocusAdd, isAnyRowEditing, setShowErrors, customColumns, validateRow, showSnackbar },
+                    toolbar: { setRows, setRowModesModel, addButtonLabel, emptyRow, fieldFocusAdd, isAnyRowEditing, setShowErrors, customColumns, validateRow, showSnackbar, toolbarSlotEnd },
                 }}
             />
 

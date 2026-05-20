@@ -19,8 +19,7 @@ export const snackbarMessages = {
     cancel: 'Édition annulée',
 };
 
-export const listeComptes = ['Crédit Agricole', 'Axa Banque'];
-
+// valueOptions intentionnellement vide : injecté dynamiquement depuis comptesRows dans App.js
 export const DepensesRecettesColumns = [
     {
         field: 'compte',
@@ -28,7 +27,7 @@ export const DepensesRecettesColumns = [
         width: 150,
         editable: true,
         type: 'singleSelect',
-        valueOptions: listeComptes,
+        valueOptions: [],
         isInitialFocus: true,
     },
     {
@@ -45,7 +44,6 @@ export const DepensesRecettesColumns = [
             const desc1 = (p1.api.getRow(p1.id)?.description ?? '').toLowerCase();
             const desc2 = (p2.api.getRow(p2.id)?.description ?? '').toLowerCase();
             const cmp = desc1.localeCompare(desc2, 'fr');
-            // Compenser l'inversion de direction pour garder description toujours asc
             const dir = p1.api.getSortModel()[0]?.sort ?? 'asc';
             return dir === 'desc' ? -cmp : cmp;
         },
@@ -116,9 +114,27 @@ export const DepensesRecettesColumns = [
     },
 ];
 
+// ─── Jeu de données de test ───────────────────────────────────────────────────
+// Couvre les 4 comptes actifs définis dans ComptesGrid.js.
+// "Ancien CCP" (archivé) est volontairement absent : il ne doit pas apparaître
+// dans le singleSelect et ses lignes doivent être masquées si le compte est archivé.
 export const initialRows = [
+    // ── Crédit Agricole ──────────────────────────────────────────────────────
     {
         id: '1',
+        compte: 'Crédit Agricole',
+        dateDepensesRecettes: new Date('2026-05-16'),
+        description: 'Salaire mai',
+        depenses: 0,
+        recettes: 2800,
+        noteDeFrais: false,
+        notesFraisRemboursee: false,
+        fraisFixe: false,
+        chequeEnCours: false,
+        depenseRecettesAMasquer: false,
+    },
+    {
+        id: '2',
         compte: 'Crédit Agricole',
         dateDepensesRecettes: new Date('2026-05-14'),
         description: 'Courses supermarché',
@@ -129,5 +145,86 @@ export const initialRows = [
         fraisFixe: false,
         chequeEnCours: false,
         depenseRecettesAMasquer: false,
-    }
+    },
+    {
+        id: '3',
+        compte: 'Crédit Agricole',
+        dateDepensesRecettes: new Date('2026-05-10'),
+        description: 'Électricité EDF',
+        depenses: 112,
+        recettes: 0,
+        noteDeFrais: false,
+        notesFraisRemboursee: false,
+        fraisFixe: true,
+        chequeEnCours: false,
+        depenseRecettesAMasquer: false,
+    },
+    {
+        id: '4',
+        compte: 'Crédit Agricole',
+        dateDepensesRecettes: new Date('2026-05-05'),
+        description: 'Restaurant client',
+        depenses: 67.80,
+        recettes: 0,
+        noteDeFrais: true,
+        notesFraisRemboursee: false,
+        fraisFixe: false,
+        chequeEnCours: false,
+        depenseRecettesAMasquer: false,
+    },
+    // ── Axa Banque ───────────────────────────────────────────────────────────
+    {
+        id: '5',
+        compte: 'Axa Banque',
+        dateDepensesRecettes: new Date('2026-05-15'),
+        description: 'Assurance voiture',
+        depenses: 68.40,
+        recettes: 0,
+        noteDeFrais: false,
+        notesFraisRemboursee: false,
+        fraisFixe: true,
+        chequeEnCours: false,
+        depenseRecettesAMasquer: false,
+    },
+    {
+        id: '6',
+        compte: 'Axa Banque',
+        dateDepensesRecettes: new Date('2026-05-03'),
+        description: 'Virement depuis Crédit Agricole',
+        depenses: 0,
+        recettes: 200,
+        noteDeFrais: false,
+        notesFraisRemboursee: false,
+        fraisFixe: false,
+        chequeEnCours: false,
+        depenseRecettesAMasquer: false,
+    },
+    // ── Livret A ─────────────────────────────────────────────────────────────
+    {
+        id: '7',
+        compte: 'Livret A',
+        dateDepensesRecettes: new Date('2026-05-01'),
+        description: 'Épargne mensuelle',
+        depenses: 0,
+        recettes: 300,
+        noteDeFrais: false,
+        notesFraisRemboursee: false,
+        fraisFixe: true,
+        chequeEnCours: false,
+        depenseRecettesAMasquer: false,
+    },
+    // ── Compte épargne ───────────────────────────────────────────────────────
+    {
+        id: '8',
+        compte: 'Compte épargne',
+        dateDepensesRecettes: new Date('2026-05-02'),
+        description: 'Virement épargne projet',
+        depenses: 0,
+        recettes: 150,
+        noteDeFrais: false,
+        notesFraisRemboursee: false,
+        fraisFixe: false,
+        chequeEnCours: false,
+        depenseRecettesAMasquer: false,
+    },
 ];
