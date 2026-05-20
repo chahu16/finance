@@ -1,3 +1,25 @@
+// Styles du dialogue de confirmation de suppression
+export const deleteDialogSx = {
+    '& .MuiDialog-paper': { outline: 'none' },
+    '& .MuiBackdrop-root': { backgroundColor: 'rgba(0, 0, 0, 0.2)' },
+};
+
+// Style du champ texte du DatePicker en édition
+export const datePickerTextFieldSx = {
+    '& .MuiInputBase-input': {
+        textAlign: 'center',
+        padding: '0px',
+    },
+};
+
+// Style de la barre d'outils (toolbar)
+export const toolbarSx = {
+    p: 1,
+    display: 'flex',
+    gap: 1,
+    justifyContent: 'flex-end',
+};
+
 export const gridStyle = {
     height: "100%",
     width: "100%",
@@ -52,6 +74,14 @@ export const gridStyle = {
     },
 };
 export const addButtonStyle = {
+    textTransform: "none",
+    fontWeight: 600,
+    color: "#000000",
+    borderColor: "#000000",
+    backgroundColor: "#ffffff",
+};
+
+export const importButtonStyle = {
     textTransform: "none",
     fontWeight: 600,
     color: "#000000",
