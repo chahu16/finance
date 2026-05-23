@@ -1,18 +1,12 @@
-import { formatEuro } from '../config/Config.js'
+import { formatEuro } from '../config/Config.js';
+import { chequeEnCoursOnFieldChange, makeDateSortComparator } from '../utils/DataGridHelpers.js';
 
 export const initialSort = [
     { field: 'dateDepensesRecettes', sort: 'desc' },
 ];
 
-// Règle métier : cocher "Chèque en cours" vide automatiquement la date
-export const onFieldChange = ({ field, value, editingId, setEditCellValue }) => {
-    if (field === 'chequeEnCours' && value === true) {
-        setEditCellValue({ id: editingId, field: 'dateDepensesRecettes', value: null });
-    }
-    if (field === 'dateDepensesRecettes' && value != null) {
-        setEditCellValue({ id: editingId, field: 'chequeEnCours', value: false });
-    }
-};
+// Règle métier : cocher "Chèque en cours" vide automatiquement la date, et inversement
+export const onFieldChange = chequeEnCoursOnFieldChange;
 
 export const snackbarMessages = {
     success: 'Dépense / recette enregistrée',
@@ -37,16 +31,7 @@ export const DepensesRecettesColumns = [
         width: 160,
         editable: true,
         align: 'center',
-        sortComparator: (v1, v2, p1, p2) => {
-            const d1 = v1 ? new Date(v1).getTime() : Infinity;
-            const d2 = v2 ? new Date(v2).getTime() : Infinity;
-            if (d1 !== d2) return d1 - d2;
-            const desc1 = (p1.api.getRow(p1.id)?.description ?? '').toLowerCase();
-            const desc2 = (p2.api.getRow(p2.id)?.description ?? '').toLowerCase();
-            const cmp = desc1.localeCompare(desc2, 'fr');
-            const dir = p1.api.getSortModel()[0]?.sort ?? 'asc';
-            return dir === 'desc' ? -cmp : cmp;
-        },
+        sortComparator: makeDateSortComparator('description'),
     },
     {
         field: 'description',

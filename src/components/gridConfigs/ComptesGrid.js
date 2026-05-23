@@ -1,12 +1,4 @@
-const formatEuroCompte = (value) => {
-    if (value == null) return '';
-    return `${Number(value).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`;
-};
-
-const formatPourcent = (value) => {
-    if (value == null) return '';
-    return `${value} %`;
-};
+import { formatEuro, formatPourcent } from '../config/Config.js';
 
 export const initialSort = [
     { field: 'nomCompte', sort: 'asc' },
@@ -36,7 +28,7 @@ export const ComptesColumns = [
         width: 140,
         editable: true,
         align: 'center',
-        valueFormatter: formatEuroCompte,
+        valueFormatter: formatEuro,
     },
     {
         field: 'sommeDeCote',
@@ -45,7 +37,7 @@ export const ComptesColumns = [
         width: 140,
         editable: true,
         align: 'center',
-        valueFormatter: formatEuroCompte,
+        valueFormatter: formatEuro,
     },
     {
         field: 'seuil',
@@ -54,7 +46,7 @@ export const ComptesColumns = [
         width: 120,
         editable: true,
         align: 'center',
-        valueFormatter: formatEuroCompte,
+        valueFormatter: formatEuro,
     },
     {
         field: 'seuilOrange',

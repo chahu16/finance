@@ -2,6 +2,7 @@ import Box from '@mui/material/Box';
 import Divider from '@mui/material/Divider';
 import Typography from '@mui/material/Typography';
 import AccountBalanceIcon from '@mui/icons-material/AccountBalance';
+import { formatEuro, getCardColor } from './config/Config.js';
 import {
     cardJointSx, headerJointSx, iconJointSx, titleJointSx,
     columnsContainerSx, columnSx, columnTitleSx,
@@ -10,17 +11,6 @@ import {
     colInstantGlobalValueSx, colInstantValueSx,
     verticalDividerSx,
 } from '../styles/StatCardJointStyles.js';
-
-const fmtEuro = (value) =>
-    `${Number(value).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`;
-
-function getCardColor(instantT, seuil, seuilOrange) {
-    const seuilVal = seuil ?? 0;
-    const orangeThreshold = seuilVal * ((seuilOrange ?? 0) / 100);
-    if (instantT > seuilVal) return 'vert';
-    if (instantT > orangeThreshold) return 'orange';
-    return 'rouge';
-}
 
 function StatCardJoint({ compte, rows, compteData, compteJointConfig, virementInternesRows = [] }) {
     const now = new Date();
@@ -109,16 +99,16 @@ function StatCardJoint({ compte, rows, compteData, compteJointConfig, virementIn
                     <Typography sx={columnTitleSx}>Global</Typography>
                     <Box sx={colRowSx}>
                         <Typography sx={colLabelSx}>Mois de {monthLabel} :</Typography>
-                        <Typography sx={colValueMoisSx}>{fmtEuro(globalMois)}</Typography>
+                        <Typography sx={colValueMoisSx}>{formatEuro(globalMois)}</Typography>
                     </Box>
                     <Box sx={colRowSx}>
                         <Typography sx={colLabelSx}>Solde théorique :</Typography>
-                        <Typography sx={colValueTheoSx}>{fmtEuro(globalTheo)}</Typography>
+                        <Typography sx={colValueTheoSx}>{formatEuro(globalTheo)}</Typography>
                     </Box>
                     <Divider sx={colDividerSx} />
                     <Box sx={colInstantRowSx}>
                         <Typography sx={colInstantLabelSx}>Instant T :</Typography>
-                        <Typography sx={colInstantGlobalValueSx(color)}>{fmtEuro(globalInstantT)}</Typography>
+                        <Typography sx={colInstantGlobalValueSx(color)}>{formatEuro(globalInstantT)}</Typography>
                     </Box>
                 </Box>
 
@@ -129,16 +119,16 @@ function StatCardJoint({ compte, rows, compteData, compteJointConfig, virementIn
                     <Typography sx={columnTitleSx}>{p1Label}</Typography>
                     <Box sx={colRowSx}>
                         <Typography sx={colLabelSx}>Mois de {monthLabel} :</Typography>
-                        <Typography sx={colValueMoisSx}>{fmtEuro(p1Mois)}</Typography>
+                        <Typography sx={colValueMoisSx}>{formatEuro(p1Mois)}</Typography>
                     </Box>
                     <Box sx={colRowSx}>
                         <Typography sx={colLabelSx}>Solde théorique :</Typography>
-                        <Typography sx={colValueTheoSx}>{fmtEuro(p1Theo)}</Typography>
+                        <Typography sx={colValueTheoSx}>{formatEuro(p1Theo)}</Typography>
                     </Box>
                     <Divider sx={colDividerSx} />
                     <Box sx={colInstantRowSx}>
                         <Typography sx={colInstantLabelSx}>Instant T :</Typography>
-                        <Typography sx={colInstantGlobalValueSx(color)}>{fmtEuro(p1InstantT)}</Typography>
+                        <Typography sx={colInstantGlobalValueSx(color)}>{formatEuro(p1InstantT)}</Typography>
                     </Box>
                 </Box>
 
@@ -149,16 +139,16 @@ function StatCardJoint({ compte, rows, compteData, compteJointConfig, virementIn
                     <Typography sx={columnTitleSx}>{p2Label}</Typography>
                     <Box sx={colRowSx}>
                         <Typography sx={colLabelSx}>Mois de {monthLabel} :</Typography>
-                        <Typography sx={colValueMoisSx}>{fmtEuro(p2Mois)}</Typography>
+                        <Typography sx={colValueMoisSx}>{formatEuro(p2Mois)}</Typography>
                     </Box>
                     <Box sx={colRowSx}>
                         <Typography sx={colLabelSx}>Solde théorique :</Typography>
-                        <Typography sx={colValueTheoSx}>{fmtEuro(p2Theo)}</Typography>
+                        <Typography sx={colValueTheoSx}>{formatEuro(p2Theo)}</Typography>
                     </Box>
                     <Divider sx={colDividerSx} />
                     <Box sx={colInstantRowSx}>
                         <Typography sx={colInstantLabelSx}>Instant T :</Typography>
-                        <Typography sx={colInstantValueSx}>{fmtEuro(p2InstantT)}</Typography>
+                        <Typography sx={colInstantValueSx}>{formatEuro(p2InstantT)}</Typography>
                     </Box>
                 </Box>
 

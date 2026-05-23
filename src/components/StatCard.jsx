@@ -2,22 +2,12 @@ import Box from '@mui/material/Box';
 import Divider from '@mui/material/Divider';
 import Typography from '@mui/material/Typography';
 import AccountBalanceIcon from '@mui/icons-material/AccountBalance';
+import { formatEuro, getCardColor } from './config/Config.js';
 import {
     cardSx, headerSx, iconSx, titleSx,
     rowSx, labelSx, valueSx, valueTheoSx,
     dividerSx, instantRowSx, instantLabelSx, instantValueSx,
 } from '../styles/StatCardStyles.js';
-
-const fmtEuro = (value) =>
-    `${Number(value).toLocaleString('fr-FR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} €`;
-
-function getCardColor(instantT, seuil, seuilOrange) {
-    const seuilVal = seuil ?? 0;
-    const orangeThreshold = seuilVal * ((seuilOrange ?? 0) / 100);
-    if (instantT > seuilVal) return 'vert';
-    if (instantT > orangeThreshold) return 'orange';
-    return 'rouge';
-}
 
 function StatCard({ compte, rows, compteData, virementInternesRows = [] }) {
     const now = new Date();
@@ -79,16 +69,16 @@ function StatCard({ compte, rows, compteData, virementInternesRows = [] }) {
             </Box>
             <Box sx={rowSx}>
                 <Typography sx={labelSx}>Mois de {monthLabel} :</Typography>
-                <Typography sx={valueSx}>{fmtEuro(soldeMoisCourant)}</Typography>
+                <Typography sx={valueSx}>{formatEuro(soldeMoisCourant)}</Typography>
             </Box>
             <Box sx={rowSx}>
                 <Typography sx={labelSx}>Solde théorique :</Typography>
-                <Typography sx={valueTheoSx}>{fmtEuro(soldeTheorique)}</Typography>
+                <Typography sx={valueTheoSx}>{formatEuro(soldeTheorique)}</Typography>
             </Box>
             <Divider sx={dividerSx} />
             <Box sx={instantRowSx}>
                 <Typography sx={instantLabelSx}>Instant T :</Typography>
-                <Typography sx={instantValueSx(color)}>{fmtEuro(instantT)}</Typography>
+                <Typography sx={instantValueSx(color)}>{formatEuro(instantT)}</Typography>
             </Box>
         </Box>
     );

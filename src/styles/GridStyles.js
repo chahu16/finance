@@ -81,10 +81,5 @@ export const addButtonStyle = {
     backgroundColor: "#ffffff",
 };
 
-export const importButtonStyle = {
-    textTransform: "none",
-    fontWeight: 600,
-    color: "#000000",
-    borderColor: "#000000",
-    backgroundColor: "#ffffff",
-};
+// Même style que addButtonStyle — alias pour la lisibilité des usages
+export const importButtonStyle = addButtonStyle;

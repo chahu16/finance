@@ -325,8 +325,8 @@ function App() {
         pourcentageMoi: Math.min(100, Math.max(0, compteJointConfig.pourcentageDefaut || 0)),
     }), [compteJointNom, compteJointConfig.pourcentageDefaut]);
 
-    // Tous les comptes non-archivés disponibles pour les virements internes (y compris compte joint)
-    const virementComptesOptions = useMemo(
+    // Tous les comptes non-archivés (virements internes + frais fixes partagent la même liste)
+    const allNonArchivedComptesOptions = useMemo(
         () => comptesRows.filter(c => !c.archived).map(c => c.nomCompte),
         [comptesRows]
     );
@@ -335,16 +335,10 @@ function App() {
     const virementInternesColumns = useMemo(
         () => VirementInternesColumns.map(col =>
             (col.field === 'compteSource' || col.field === 'compteDestination')
-                ? { ...col, valueOptions: virementComptesOptions }
+                ? { ...col, valueOptions: allNonArchivedComptesOptions }
                 : col
         ),
-        [virementComptesOptions]
-    );
-
-    // Tous les comptes non-archivés pour les frais fixes (y compris compte joint)
-    const fraisFixesComptesOptions = useMemo(
-        () => comptesRows.filter(c => !c.archived).map(c => c.nomCompte),
-        [comptesRows]
+        [allNonArchivedComptesOptions]
     );
 
     // Colonnes frais fixes : valueOptions compte + renderCell pour Mon %
@@ -353,7 +347,7 @@ function App() {
     const fraisFixesColumns = useMemo(() => {
         return FraisFixesColumns.map(col => {
             if (col.field === 'compte') {
-                return { ...col, valueOptions: fraisFixesComptesOptions };
+                return { ...col, valueOptions: allNonArchivedComptesOptions };
             }
             if (col.field === 'pourcentageMoi') {
                 return {
@@ -367,7 +361,7 @@ function App() {
             }
             return col;
         });
-    }, [fraisFixesComptesOptions, compteJointNom]);
+    }, [allNonArchivedComptesOptions, compteJointNom]);
 
     // onFieldChange enrichi : pré-remplit / efface pourcentageMoi selon le compte sélectionné
     const fraisFixesOnFieldChangeEnriched = useCallback((args) => {
