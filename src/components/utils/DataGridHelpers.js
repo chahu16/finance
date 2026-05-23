@@ -1,6 +1,7 @@
 // Focus le bon élément dans une cellule selon son type, après un délai optionnel
 export const focusCell = (apiRef, id, field, type, delay = 50) => {
     setTimeout(() => {
+        if (!apiRef.current) return;
         const cell = apiRef.current.getCellElement(id, field);
         if (type === 'date') {
             const spinButton = cell?.querySelector('[role="spinbutton"]');

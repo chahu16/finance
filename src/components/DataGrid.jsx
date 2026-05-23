@@ -397,11 +397,20 @@ export default function FullFeaturedCrudGrid({
         if (!apiRef.current) return;
         const booleanFields = customColumns.filter(col => col.type === 'boolean').map(col => col.field);
         const dateFields = customColumns.filter(col => col.type === 'date').map(col => col.field);
+        const singleSelectFields = customColumns.filter(col => col.type === 'singleSelect').map(col => col.field);
 
         const unsubscribe = apiRef.current.store.subscribe(() => {
             const editRows = apiRef.current.state.editRows;
             const editingId = Object.keys(editRows)[0];
             if (!editingId) return;
+
+            const makeOnFieldChangeArgs = (field, value) => ({
+                field,
+                value,
+                editingId,
+                setEditCellValue: (args) => setTimeout(() => apiRef.current.setEditCellValue(args), 0),
+                getEditCellValue: ({ id, field }) => editRows[id]?.[field]?.value,
+            });
 
             let anyChanged = false;
             for (const field of booleanFields) {
@@ -409,15 +418,8 @@ export default function FullFeaturedCrudGrid({
                 if (value === undefined || value === lastBooleanValuesRef.current[field]) continue;
                 lastBooleanValuesRef.current[field] = value;
                 anyChanged = true;
-                if (onFieldChange) {
-                    // Délai 0 pour laisser MUI finaliser la mise à jour interne avant d'agir
-                    onFieldChange({
-                        field,
-                        value,
-                        editingId,
-                        setEditCellValue: (args) => setTimeout(() => apiRef.current.setEditCellValue(args), 0),
-                    });
-                }
+                // Délai 0 pour laisser MUI finaliser la mise à jour interne avant d'agir
+                if (onFieldChange) onFieldChange(makeOnFieldChangeArgs(field, value));
             }
 
             for (const field of dateFields) {
@@ -426,14 +428,14 @@ export default function FullFeaturedCrudGrid({
                 const currStr = String(value ?? '');
                 if (currStr === prevStr) continue;
                 lastBooleanValuesRef.current[field] = value;
-                if (onFieldChange) {
-                    onFieldChange({
-                        field,
-                        value,
-                        editingId,
-                        setEditCellValue: (args) => setTimeout(() => apiRef.current.setEditCellValue(args), 0),
-                    });
-                }
+                if (onFieldChange) onFieldChange(makeOnFieldChangeArgs(field, value));
+            }
+
+            for (const field of singleSelectFields) {
+                const value = editRows[editingId]?.[field]?.value;
+                if (value === undefined || value === lastBooleanValuesRef.current[`ss_${field}`]) continue;
+                lastBooleanValuesRef.current[`ss_${field}`] = value;
+                if (onFieldChange) onFieldChange(makeOnFieldChangeArgs(field, value));
             }
 
             if (anyChanged && showErrors) {

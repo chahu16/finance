@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
+import { randomId } from '@mui/x-data-grid-generator';
 import Box from '@mui/material/Box';
 import Button from '@mui/material/Button';
 import Checkbox from '@mui/material/Checkbox';
@@ -21,10 +22,13 @@ import { validateRow } from './components/utils/DepensesRecettesValidation.js';
 import { validateRow as validateCompteRow } from './components/utils/ComptesValidation.js';
 import { validateRow as validateCompteJointRow } from './components/utils/CompteJointValidation.js';
 import { validateRow as validateVirementRow } from './components/utils/VirementInternesValidation.js';
+import { validateRow as validateFraisFixeBaseRow } from './components/utils/FraisFixesValidation.js';
+import { computeFraisFixeTrigger } from './components/utils/FraisFixesTrigger.js';
 import { DepensesRecettesColumns, initialRows, snackbarMessages, initialSort, onFieldChange } from './components/gridConfigs/DepensesRecettesGrid.js';
 import { ComptesColumns, initialRows as initialComptesRows, snackbarMessages as comptesMessages, initialSort as comptesInitialSort, extraRowDefaults as comptesExtraRowDefaults } from './components/gridConfigs/ComptesGrid.js';
 import { CompteJointColumns, snackbarMessages as compteJointMessages, initialSort as compteJointInitialSort, onFieldChange as compteJointOnFieldChange } from './components/gridConfigs/CompteJointGrid.js';
 import { VirementInternesColumns, initialRows as initialVirementRows, snackbarMessages as virementMessages, initialSort as virementInitialSort } from './components/gridConfigs/VirementInternesGrid.js';
+import { FraisFixesColumns, initialRows as initialFraisFixesRows, snackbarMessages as fraisFixesMessages, initialSort as fraisFixesInitialSort, extraRowDefaults as fraisFixesExtraRowDefaults, onFieldChange as fraisFixesOnFieldChange } from './components/gridConfigs/FraisFixesGrid.js';
 import { statCardsContainerSx } from './styles/StatCardStyles.js';
 import { addButtonStyle } from './styles/GridStyles.js';
 import { parametrageFormSx, formSectionTitleSx, formRowSx, computedValueSx } from './styles/CompteJointStyles.js';
@@ -41,7 +45,9 @@ function App() {
     const [rows, setRows] = useState(initialRows);
     const [comptesRows, setComptesRows] = useState(initialComptesRows);
     const [virementInternesRows, setVirementInternesRows] = useState(initialVirementRows);
+    const [fraisFixesRows, setFraisFixesRows] = useState(initialFraisFixesRows);
     const [showArchivedComptes, setShowArchivedComptes] = useState(false);
+    const [showArchivedFraisFixes, setShowArchivedFraisFixes] = useState(false);
     const [compteJointConfig, setCompteJointConfig] = useState({
         personne1: '',
         personne2: '',
@@ -49,6 +55,108 @@ function App() {
         pourcentageSoldeInitialMoi: null,
     });
     const [soldeInitialPctWarning, setSoldeInitialPctWarning] = useState(false);
+
+    // Clé du jour courant — change à minuit pour relancer le contrôle des frais fixes
+    const [todayKey, setTodayKey] = useState(() => {
+        const d = new Date();
+        return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+    });
+    useEffect(() => {
+        const idRef = { current: null };
+        const scheduleNextMidnight = () => {
+            const now = new Date();
+            const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
+            idRef.current = setTimeout(() => {
+                const d = new Date();
+                setTodayKey(`${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`);
+                scheduleNextMidnight();
+            }, midnight - now);
+        };
+        scheduleNextMidnight();
+        return () => clearTimeout(idRef.current);
+    }, []);
+
+    // Synchronise les lignes sans date auto-ajoutées avec l'état courant des frais fixes :
+    // - hors fenêtre → supprime la ligne sans date correspondante
+    // - dans la fenêtre → ajoute la ligne si absente
+    useEffect(() => {
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+
+        setRows(prevRows => {
+            const toAdd = [];
+            const toRemoveIds = new Set();
+
+            for (const ff of fraisFixesRows) {
+                if (ff.archived) continue;
+
+                const trigger = computeFraisFixeTrigger(ff, today);
+
+                // Description enrichie de l'étiquette d'occurrence pour Trimestriel / Semestriel
+                // ex. "Assurance habitation (2/3)" pour la 2ème occurrence sur 3 dans l'année.
+                const description = ff.description +
+                    (trigger?.occurrenceLabel ? ` (${trigger.occurrenceLabel})` : '');
+
+                if (!trigger?.inTriggerWindow) {
+                    // Hors fenêtre : retire les lignes sans date auto-ajoutées pour ce frais fixe
+                    // La correspondance couvre les descriptions avec ou sans étiquette d'occurrence.
+                    for (const r of prevRows) {
+                        if (
+                            r.compte === ff.compte &&
+                            r.fraisFixe === true &&
+                            r.dateDepensesRecettes == null &&
+                            (r.description === ff.description ||
+                             r.description.startsWith(`${ff.description} (`))
+                        ) {
+                            toRemoveIds.add(r.id);
+                        }
+                    }
+                    continue;
+                }
+
+                // Dans la fenêtre : ajoute si pas encore présent
+                // - sans date : un placeholder existe déjà pour cette occurrence
+                // - daté dans la période ET postérieur à l'ouverture de la fenêtre :
+                //   le paiement a déjà été confirmé (ne pas créer de doublon).
+                //   On exige >= triggerDate pour éviter qu'un paiement enregistré avant
+                //   la fenêtre (ex. avec un ancien jourPrelevement) bloque la création.
+                const alreadyHandled = prevRows.some(r =>
+                    !toRemoveIds.has(r.id) &&
+                    r.compte === ff.compte &&
+                    r.description === description &&
+                    r.fraisFixe === true &&
+                    (
+                        r.dateDepensesRecettes == null ||
+                        (
+                            trigger.isDateInCurrentPeriod(r.dateDepensesRecettes) &&
+                            new Date(r.dateDepensesRecettes) >= trigger.triggerDate
+                        )
+                    )
+                );
+
+                if (!alreadyHandled) {
+                    toAdd.push({
+                        id: randomId(),
+                        compte: ff.compte,
+                        description,
+                        depenses: ff.type === 'Dépense' ? ff.montant : 0,
+                        recettes: ff.type === 'Recette' ? ff.montant : 0,
+                        noteDeFrais: false,
+                        notesFraisRemboursee: false,
+                        fraisFixe: true,
+                        chequeEnCours: false,
+                        depenseRecettesAMasquer: false,
+                        dateDepensesRecettes: null,
+                        pourcentageMoi: ff.pourcentageMoi ?? null,
+                    });
+                }
+            }
+
+            if (toAdd.length === 0 && toRemoveIds.size === 0) return prevRows;
+            const filtered = toRemoveIds.size > 0 ? prevRows.filter(r => !toRemoveIds.has(r.id)) : prevRows;
+            return toAdd.length > 0 ? [...toAdd, ...filtered] : filtered;
+        });
+    }, [fraisFixesRows, todayKey]);
 
     const prevComptesRowsRef = useRef(comptesRows);
     useEffect(() => {
@@ -63,6 +171,10 @@ function App() {
         prevComptesRowsRef.current = comptesRows;
         if (renames.length === 0) return;
         setRows(prev => prev.map(r => {
+            const rename = renames.find(rn => rn.oldName === r.compte);
+            return rename ? { ...r, compte: rename.newName } : r;
+        }));
+        setFraisFixesRows(prev => prev.map(r => {
             const rename = renames.find(rn => rn.oldName === r.compte);
             return rename ? { ...r, compte: rename.newName } : r;
         }));
@@ -229,6 +341,83 @@ function App() {
         [virementComptesOptions]
     );
 
+    // Tous les comptes non-archivés pour les frais fixes (y compris compte joint)
+    const fraisFixesComptesOptions = useMemo(
+        () => comptesRows.filter(c => !c.archived).map(c => c.nomCompte),
+        [comptesRows]
+    );
+
+    // Colonnes frais fixes : valueOptions compte + renderCell pour Mon %
+    // isCellEditable retiré : params.row reflète l'état persisté (toujours '' pour une nouvelle
+    // ligne), ce qui empêchait l'édition du % même après sélection du compte joint.
+    const fraisFixesColumns = useMemo(() => {
+        return FraisFixesColumns.map(col => {
+            if (col.field === 'compte') {
+                return { ...col, valueOptions: fraisFixesComptesOptions };
+            }
+            if (col.field === 'pourcentageMoi') {
+                return {
+                    ...col,
+                    renderCell: (params) => {
+                        if (params.row.compte !== compteJointNom) return null;
+                        if (params.value == null) return '';
+                        return `${params.value} %`;
+                    },
+                };
+            }
+            return col;
+        });
+    }, [fraisFixesComptesOptions, compteJointNom]);
+
+    // onFieldChange enrichi : pré-remplit / efface pourcentageMoi selon le compte sélectionné
+    const fraisFixesOnFieldChangeEnriched = useCallback((args) => {
+        fraisFixesOnFieldChange(args);
+        if (args.field === 'compte' && compteJointNom) {
+            if (args.value === compteJointNom) {
+                const current = args.getEditCellValue({ id: args.editingId, field: 'pourcentageMoi' });
+                if (current == null || current === 0) {
+                    args.setEditCellValue({ id: args.editingId, field: 'pourcentageMoi', value: compteJointConfig.pourcentageDefaut ?? 50 });
+                }
+            } else {
+                args.setEditCellValue({ id: args.editingId, field: 'pourcentageMoi', value: null });
+            }
+        }
+    }, [compteJointNom, compteJointConfig.pourcentageDefaut]);
+
+    // Validation frais fixes : base + pourcentageMoi obligatoire sur compte joint
+    const validateFraisFixeRow = useCallback((row) => {
+        const errors = validateFraisFixeBaseRow(row);
+        if (row.compte === compteJointNom) {
+            const pct = parseFloat(row.pourcentageMoi);
+            if (row.pourcentageMoi === null || row.pourcentageMoi === undefined || row.pourcentageMoi === '') {
+                errors.pourcentageMoi = 'Le pourcentage est obligatoire pour un compte joint';
+            } else if (isNaN(pct) || pct < 0 || pct > 100) {
+                errors.pourcentageMoi = 'Le pourcentage doit être entre 0 et 100';
+            }
+        }
+        return errors;
+    }, [compteJointNom]);
+
+    // Actions archive / désarchive pour frais fixes
+    const fraisFixesExtraActions = useMemo(() => showArchivedFraisFixes
+        ? [{
+            icon: <UnarchiveIcon />,
+            label: 'Désarchiver',
+            onClick: (id, setRows, showSnackbar) => {
+                setRows(prev => prev.map(r => r.id === id ? { ...r, archived: false } : r));
+                showSnackbar('Frais fixe désarchivé', 'success');
+            },
+        }]
+        : [{
+            icon: <ArchiveIcon />,
+            label: 'Archiver',
+            onClick: (id, setRows, showSnackbar) => {
+                setRows(prev => prev.map(r => r.id === id ? { ...r, archived: true } : r));
+                showSnackbar('Frais fixe archivé', 'info');
+            },
+        }],
+    [showArchivedFraisFixes]);
+
     // Filtre appliqué au DataGrid dépenses : masque les lignes liées à un compte archivé ou compte joint
     const depensesRowFilter = useMemo(
         () => excludedComptesNames.size > 0 ? (row) => !excludedComptesNames.has(row.compte) : null,
@@ -332,6 +521,7 @@ function App() {
                             square
                             onChange={(_, expanded) => {
                                 if (label === 'Comptes' && expanded) setShowArchivedComptes(false);
+                                if (label === 'Frais fixes' && expanded) setShowArchivedFraisFixes(false);
                             }}
                             sx={{
                                 borderBottom: '1px solid',
@@ -343,7 +533,35 @@ function App() {
                             <AccordionSummary expandIcon={<ExpandMoreIcon />}>
                                 {label}
                             </AccordionSummary>
-                            <AccordionDetails sx={label === 'Comptes' ? { p: 0 } : undefined}>
+                            <AccordionDetails sx={(label === 'Comptes' || label === 'Frais fixes') ? { p: 0 } : undefined}>
+                                {label === 'Frais fixes' && (
+                                    <FullFeaturedCrudGrid
+                                        columns={fraisFixesColumns}
+                                        initialRows={fraisFixesRows}
+                                        onRowsChange={setFraisFixesRows}
+                                        addButtonLabel="Ajouter un frais fixe"
+                                        fieldFocusEdit="description"
+                                        validateRow={validateFraisFixeRow}
+                                        messages={fraisFixesMessages}
+                                        initialSort={fraisFixesInitialSort}
+                                        extraRowDefaults={fraisFixesExtraRowDefaults}
+                                        onFieldChange={fraisFixesOnFieldChangeEnriched}
+                                        rowDisplayField="description"
+                                        extraRowActions={fraisFixesExtraActions}
+                                        rowFilter={showArchivedFraisFixes ? (row) => row.archived : (row) => !row.archived}
+                                        height={400}
+                                        toolbarSlotEnd={
+                                            <Button
+                                                variant="outlined"
+                                                size="small"
+                                                onClick={() => setShowArchivedFraisFixes(prev => !prev)}
+                                                sx={addButtonStyle}
+                                            >
+                                                {showArchivedFraisFixes ? 'Masquer les frais fixes archivés' : 'Afficher les frais fixes archivés'}
+                                            </Button>
+                                        }
+                                    />
+                                )}
                                 {label === 'Paramétrage' && (
                                     <Box sx={parametrageFormSx}>
                                         <Typography sx={formSectionTitleSx}>Compte joint</Typography>
