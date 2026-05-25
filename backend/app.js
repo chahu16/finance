@@ -13,8 +13,10 @@ mongoose.connect(process.env.MONGODB_URI)
     .catch(() => console.log('Connexion à MongoDB échouée !'));
 
 const originesAutorisees = [
-    'http://localhost:3000', // Front en local via localhost
-    'http://192.168.1.24:3000', // Front en local via IP
+    'http://localhost:3000',
+    'http://localhost:3001',
+    'http://192.168.1.24:3000',
+    'http://192.168.1.24:3001',
 ];
 
 app.use((req, res, next) => {

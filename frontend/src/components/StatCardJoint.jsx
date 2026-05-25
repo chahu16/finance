@@ -78,10 +78,11 @@ function StatCardJoint({ compte, rows, compteData, compteJointConfig, virementIn
     const p2Theo     = p2Base + sum(rows,     r => net(r) * (1 - pctMoi(r)));
     const p2InstantT = p2Base + sum(rowsDate, r => net(r) * (1 - pctMoi(r)));
 
-    const color = getCardColor(globalInstantT, seuil, seuilOrange);
-
     const p1Label = compteJointConfig.personne1 || 'Moi';
     const p2Label = compteJointConfig.personne2 || 'Autre';
+
+
+    const color = getCardColor(globalInstantT, seuil, seuilOrange);
 
     return (
         <Box sx={cardJointSx(color)}>

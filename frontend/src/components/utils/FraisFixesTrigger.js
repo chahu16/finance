@@ -35,7 +35,12 @@ export function computeFraisFixeTrigger(ff, today) {
         let dueDate = new Date(y, m, effectiveDayThis);
         dueDate.setHours(0, 0, 0, 0);
 
-        if (dueDate < today) {
+        // L'échéance du mois courant est-elle déjà passée ?
+        // Utilisé pour ne supprimer un placeholder que si l'occurrence est vraiment révolue,
+        // et non simplement parce que la fenêtre de 2 jours n'est pas encore ouverte.
+        const occurrencePast = dueDate < today;
+
+        if (occurrencePast) {
             // Déjà passé ce mois-ci → mois suivant
             const effectiveDayNext = Math.min(jourPrelevement, daysInMonth(y, m + 1));
             dueDate = new Date(y, m + 1, effectiveDayNext);
@@ -49,6 +54,7 @@ export function computeFraisFixeTrigger(ff, today) {
 
         return {
             inTriggerWindow: today >= triggerDate,
+            occurrencePast,
             triggerDate,
             occurrenceLabel: null,
             isDateInCurrentPeriod: (date) => {
@@ -91,6 +97,7 @@ export function computeFraisFixeTrigger(ff, today) {
 
             return {
                 inTriggerWindow,
+                occurrencePast: !inTriggerWindow,
                 triggerDate,
                 occurrenceLabel,
                 isDateInCurrentPeriod: (date) => {

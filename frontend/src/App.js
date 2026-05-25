@@ -1,6 +1,7 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { randomId } from '@mui/x-data-grid-generator';
 import Box from '@mui/material/Box';
+import CircularProgress from '@mui/material/CircularProgress';
 import Button from '@mui/material/Button';
 import Checkbox from '@mui/material/Checkbox';
 import TextField from '@mui/material/TextField';
@@ -24,11 +25,15 @@ import { validateRow as validateCompteJointRow } from './components/utils/Compte
 import { validateRow as validateVirementRow } from './components/utils/VirementInternesValidation.js';
 import { validateRow as validateFraisFixeBaseRow } from './components/utils/FraisFixesValidation.js';
 import { computeFraisFixeTrigger } from './components/utils/FraisFixesTrigger.js';
-import { DepensesRecettesColumns, initialRows, snackbarMessages, initialSort, onFieldChange } from './components/gridConfigs/DepensesRecettesGrid.js';
-import { ComptesColumns, initialRows as initialComptesRows, snackbarMessages as comptesMessages, initialSort as comptesInitialSort, extraRowDefaults as comptesExtraRowDefaults } from './components/gridConfigs/ComptesGrid.js';
+import { DepensesRecettesColumns, snackbarMessages, initialSort, onFieldChange } from './components/gridConfigs/DepensesRecettesGrid.js';
+import { fetchDepensesRecettes, saveDepenseRecette, deleteDepenseRecette } from './api/depensesRecettes.js';
+import { ComptesColumns, snackbarMessages as comptesMessages, initialSort as comptesInitialSort, extraRowDefaults as comptesExtraRowDefaults } from './components/gridConfigs/ComptesGrid.js';
+import { fetchComptes, saveCompte, deleteCompte, toggleArchiveCompte } from './api/comptes.js';
+import { fetchFraisFixes, saveFraisFixe, deleteFraisFixe, toggleArchiveFraisFixe } from './api/fraisFixes.js';
 import { CompteJointColumns, snackbarMessages as compteJointMessages, initialSort as compteJointInitialSort, onFieldChange as compteJointOnFieldChange } from './components/gridConfigs/CompteJointGrid.js';
-import { VirementInternesColumns, initialRows as initialVirementRows, snackbarMessages as virementMessages, initialSort as virementInitialSort } from './components/gridConfigs/VirementInternesGrid.js';
-import { FraisFixesColumns, initialRows as initialFraisFixesRows, snackbarMessages as fraisFixesMessages, initialSort as fraisFixesInitialSort, extraRowDefaults as fraisFixesExtraRowDefaults, onFieldChange as fraisFixesOnFieldChange } from './components/gridConfigs/FraisFixesGrid.js';
+import { VirementInternesColumns, snackbarMessages as virementMessages, initialSort as virementInitialSort } from './components/gridConfigs/VirementInternesGrid.js';
+import { fetchVirementInternes, saveVirementInterne, deleteVirementInterne } from './api/virementInternes.js';
+import { FraisFixesColumns, snackbarMessages as fraisFixesMessages, initialSort as fraisFixesInitialSort, extraRowDefaults as fraisFixesExtraRowDefaults, onFieldChange as fraisFixesOnFieldChange } from './components/gridConfigs/FraisFixesGrid.js';
 import { statCardsContainerSx } from './styles/StatCardStyles.js';
 import { addButtonStyle } from './styles/GridStyles.js';
 import { parametrageFormSx, formSectionTitleSx, formRowSx, computedValueSx } from './styles/CompteJointStyles.js';
@@ -42,10 +47,66 @@ const PARAMETRAGE_SECTIONS = [
 
 function App() {
     const [tab, setTab] = useState(0);
-    const [rows, setRows] = useState(initialRows);
-    const [comptesRows, setComptesRows] = useState(initialComptesRows);
-    const [virementInternesRows, setVirementInternesRows] = useState(initialVirementRows);
-    const [fraisFixesRows, setFraisFixesRows] = useState(initialFraisFixesRows);
+    const [rows, setRows] = useState([]);
+    const [comptesRows, setComptesRows] = useState([]);
+    const [virementInternesRows, setVirementInternesRows] = useState([]);
+    const [isLoading, setIsLoading] = useState(true);
+
+    const onSaveDepenseRecette = useCallback(async (row, isNew) => {
+        return saveDepenseRecette(row, isNew);
+    }, []);
+
+    const onDeleteConfirmDepenseRecette = useCallback(async (row) => {
+        await deleteDepenseRecette(row);
+        return 'delete';
+    }, []);
+
+    const onSaveVirementInterne = useCallback(async (row, isNew) => {
+        return saveVirementInterne(row, isNew);
+    }, []);
+
+    const onDeleteConfirmVirementInterne = useCallback(async (row) => {
+        await deleteVirementInterne(row);
+        return 'delete';
+    }, []);
+
+    // ─── Chargement initial — toutes les collections en parallèle ────────────
+    useEffect(() => {
+        Promise.all([
+            fetchComptes(),
+            fetchDepensesRecettes(),
+            fetchFraisFixes(),
+            fetchVirementInternes(),
+        ])
+            .then(([comptes, depRec, fraisFixes, virements]) => {
+                setComptesRows(comptes);
+                setRows(depRec);
+                setFraisFixesRows(fraisFixes);
+                setVirementInternesRows(virements);
+            })
+            .catch((err) => console.error('Chargement initial:', err))
+            .finally(() => setIsLoading(false));
+    }, []);
+
+    const onSaveCompte = useCallback(async (row, isNew) => {
+        return saveCompte(row, isNew);
+    }, []);
+
+    const onDeleteConfirmCompte = useCallback(async (row) => {
+        const action = await deleteCompte(row);
+        return { action };
+    }, []);
+
+    const [fraisFixesRows, setFraisFixesRows] = useState([]);
+
+    const onSaveFraisFixe = useCallback(async (row, isNew) => {
+        return saveFraisFixe(row, isNew);
+    }, []);
+
+    const onDeleteConfirmFraisFixe = useCallback(async (row) => {
+        await deleteFraisFixe(row);
+        return 'delete';
+    }, []);
     const [showArchivedComptes, setShowArchivedComptes] = useState(false);
     const [showArchivedFraisFixes, setShowArchivedFraisFixes] = useState(false);
     const [compteJointConfig, setCompteJointConfig] = useState({
@@ -98,17 +159,21 @@ function App() {
                     (trigger?.occurrenceLabel ? ` (${trigger.occurrenceLabel})` : '');
 
                 if (!trigger?.inTriggerWindow) {
-                    // Hors fenêtre : retire les lignes sans date auto-ajoutées pour ce frais fixe
-                    // La correspondance couvre les descriptions avec ou sans étiquette d'occurrence.
-                    for (const r of prevRows) {
-                        if (
-                            r.compte === ff.compte &&
-                            r.fraisFixe === true &&
-                            r.dateDepensesRecettes == null &&
-                            (r.description === ff.description ||
-                             r.description.startsWith(`${ff.description} (`))
-                        ) {
-                            toRemoveIds.add(r.id);
+                    // Supprime le placeholder seulement si l'occurrence du mois courant est
+                    // révolue (occurrencePast). Si la fenêtre de déclenchement n'est pas encore
+                    // ouverte mais que l'échéance est toujours à venir (ex. jourPrelevement
+                    // vient d'être modifié), on conserve le placeholder existant.
+                    if (!trigger || trigger.occurrencePast) {
+                        for (const r of prevRows) {
+                            if (
+                                r.compte === ff.compte &&
+                                r.fraisFixe === true &&
+                                r.dateDepensesRecettes == null &&
+                                (r.description === ff.description ||
+                                 r.description.startsWith(`${ff.description} (`))
+                            ) {
+                                toRemoveIds.add(r.id);
+                            }
                         }
                     }
                     continue;
@@ -213,7 +278,7 @@ function App() {
         ? [{
             icon: <UnarchiveIcon />,
             label: 'Désarchiver',
-            onClick: (id, setRows, showSnackbar) => {
+            onClick: async (id, setRows, showSnackbar) => {
                 const targetRow = comptesRows.find(r => r.id === id);
                 if (targetRow?.compteJoint) {
                     const hasActiveJoint = comptesRows.some(r => r.compteJoint && !r.archived && r.id !== id);
@@ -225,16 +290,26 @@ function App() {
                         return;
                     }
                 }
-                setRows(prev => prev.map(r => r.id === id ? { ...r, archived: false } : r));
-                showSnackbar('Compte désarchivé', 'success');
+                try {
+                    await toggleArchiveCompte(id, false);
+                    setRows(prev => prev.map(r => r.id === id ? { ...r, archived: false } : r));
+                    showSnackbar('Compte désarchivé', 'success');
+                } catch (err) {
+                    showSnackbar(err.message || 'Erreur désarchivage', 'error');
+                }
             },
         }]
         : [{
             icon: <ArchiveIcon />,
             label: 'Archiver',
-            onClick: (id, setRows, showSnackbar) => {
-                setRows(prev => prev.map(r => r.id === id ? { ...r, archived: true } : r));
-                showSnackbar('Compte archivé', 'success');
+            onClick: async (id, setRows, showSnackbar) => {
+                try {
+                    await toggleArchiveCompte(id, true);
+                    setRows(prev => prev.map(r => r.id === id ? { ...r, archived: true } : r));
+                    showSnackbar('Compte archivé', 'info');
+                } catch (err) {
+                    showSnackbar(err.message || 'Erreur archivage', 'error');
+                }
             },
         }],
     [showArchivedComptes, comptesRows]);
@@ -397,17 +472,27 @@ function App() {
         ? [{
             icon: <UnarchiveIcon />,
             label: 'Désarchiver',
-            onClick: (id, setRows, showSnackbar) => {
-                setRows(prev => prev.map(r => r.id === id ? { ...r, archived: false } : r));
-                showSnackbar('Frais fixe désarchivé', 'success');
+            onClick: async (id, setRows, showSnackbar) => {
+                try {
+                    await toggleArchiveFraisFixe(id, false);
+                    setRows(prev => prev.map(r => r.id === id ? { ...r, archived: false } : r));
+                    showSnackbar('Frais fixe désarchivé', 'success');
+                } catch (err) {
+                    showSnackbar(err.message || 'Erreur désarchivage', 'error');
+                }
             },
         }]
         : [{
             icon: <ArchiveIcon />,
             label: 'Archiver',
-            onClick: (id, setRows, showSnackbar) => {
-                setRows(prev => prev.map(r => r.id === id ? { ...r, archived: true } : r));
-                showSnackbar('Frais fixe archivé', 'info');
+            onClick: async (id, setRows, showSnackbar) => {
+                try {
+                    await toggleArchiveFraisFixe(id, true);
+                    setRows(prev => prev.map(r => r.id === id ? { ...r, archived: true } : r));
+                    showSnackbar('Frais fixe archivé', 'info');
+                } catch (err) {
+                    showSnackbar(err.message || 'Erreur archivage', 'error');
+                }
             },
         }],
     [showArchivedFraisFixes]);
@@ -417,6 +502,14 @@ function App() {
         () => excludedComptesNames.size > 0 ? (row) => !excludedComptesNames.has(row.compte) : null,
         [excludedComptesNames]
     );
+
+    if (isLoading) {
+        return (
+            <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh' }}>
+                <CircularProgress />
+            </Box>
+        );
+    }
 
     return (
         <Box sx={{ width: '100%' }}>
@@ -473,6 +566,8 @@ function App() {
                         initialSort={initialSort}
                         onFieldChange={onFieldChange}
                         onRowsChange={setRows}
+                        onSave={onSaveDepenseRecette}
+                        onDeleteConfirm={onDeleteConfirmDepenseRecette}
                         rowFilter={depensesRowFilter}
                     />
                 </Box>
@@ -496,6 +591,8 @@ function App() {
                             initialSort={compteJointInitialSort}
                             onFieldChange={compteJointOnFieldChange}
                             onRowsChange={setRows}
+                            onSave={onSaveDepenseRecette}
+                            onDeleteConfirm={onDeleteConfirmDepenseRecette}
                             rowFilter={(row) => row.compte === compteJointNom}
                             extraRowDefaults={compteJointExtraRowDefaults}
                         />
@@ -540,6 +637,8 @@ function App() {
                                         initialSort={fraisFixesInitialSort}
                                         extraRowDefaults={fraisFixesExtraRowDefaults}
                                         onFieldChange={fraisFixesOnFieldChangeEnriched}
+                                        onSave={onSaveFraisFixe}
+                                        onDeleteConfirm={onDeleteConfirmFraisFixe}
                                         rowDisplayField="description"
                                         extraRowActions={fraisFixesExtraActions}
                                         rowFilter={showArchivedFraisFixes ? (row) => row.archived : (row) => !row.archived}
@@ -650,6 +749,8 @@ function App() {
                                         messages={virementMessages}
                                         initialSort={virementInitialSort}
                                         onRowsChange={setVirementInternesRows}
+                                        onSave={onSaveVirementInterne}
+                                        onDeleteConfirm={onDeleteConfirmVirementInterne}
                                         rowDisplayField="compteSource"
                                         height={400}
                                     />
@@ -670,6 +771,8 @@ function App() {
                                         extraRowActions={comptesExtraActions}
                                         rowFilter={showArchivedComptes ? (row) => row.archived : (row) => !row.archived}
                                         resolveDelete={resolveCompteDelete}
+                                        onSave={onSaveCompte}
+                                        onDeleteConfirm={onDeleteConfirmCompte}
                                         height={400}
                                         toolbarSlotEnd={
                                             <Button

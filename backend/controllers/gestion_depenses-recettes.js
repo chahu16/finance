@@ -141,7 +141,7 @@ exports.modificationDepenseRecette = async (req, res) => {
         const updatedDoc = await depensesRecettes.findByIdAndUpdate(
             req.body.id,
             { $set: dataPrepared },
-            { new: true }
+            { returnDocument: 'after' }
         ).populate('compte');
 
         res.status(200).json(formaterPourFront(updatedDoc));
@@ -390,7 +390,7 @@ exports.modificationVirement = async (req, res) => {
                     depenses: toCents(montant),
                 }
             },
-            { new: true }
+            { returnDocument: 'after' }
         ).populate('compte').populate('compteDestination');
 
         res.status(200).json(formaterVirementPourFront(doc));

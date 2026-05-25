@@ -157,7 +157,7 @@ exports.modificationFraisFixes = async (req, res) => {
         }
 
         const doc = await fraisFixe
-            .findByIdAndUpdate(id, updateQuery, { new: true })
+            .findByIdAndUpdate(id, updateQuery, { returnDocument: 'after' })
             .populate('compte');
 
         res.status(200).json(formaterPourFront(doc));
@@ -180,7 +180,7 @@ exports.archiverFraisFixes = async (req, res) => {
         const doc = await fraisFixe.findByIdAndUpdate(
             req.body.id,
             { $set: { archive: !!req.body.archive } },
-            { new: true }
+            { returnDocument: 'after' }
         ).populate('compte');
         res.status(200).json(formaterPourFront(doc));
     } catch (error) {

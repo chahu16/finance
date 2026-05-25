@@ -338,10 +338,18 @@ export default function FullFeaturedCrudGrid({
     rowFilter = null,
     toolbarSlotEnd = null,
     resolveDelete = null,
+    onSave = null,
+    onDeleteConfirm = null,
 }) {
     const apiRef = useGridApiRef();
     const [rows, setRows] = React.useState(initialRows);
     const [rowModesModel, setRowModesModel] = React.useState({});
+
+    // Sync des données chargées de façon asynchrone (ex. fetch API après le montage)
+    // N'écrase jamais les rows si le DataGrid a déjà des données en état local.
+    React.useEffect(() => {
+        setRows(prev => prev.length === 0 && initialRows.length > 0 ? initialRows : prev);
+    }, [initialRows]);
     const [openDeleteDialog, setOpenDeleteDialog] = React.useState(false);
     const [rowToDelete, setRowToDelete] = React.useState(null);
     const [deleteResolution, setDeleteResolution] = React.useState(null);
@@ -484,19 +492,35 @@ export default function FullFeaturedCrudGrid({
         setOpenDeleteDialog(true);
     }, [rows, resolveDelete]);
 
-    const handleConfirmDelete = () => {
-        if (rowToDelete) {
-            if (deleteResolution?.action === 'archive') {
-                setRows((prev) => prev.map((r) => r.id === rowToDelete.id ? { ...r, archived: true } : r));
-                showSnackbar(deleteResolution.message || 'Élément archivé', 'info');
-            } else {
-                setRows((prev) => prev.filter((row) => row.id !== rowToDelete.id));
+    const handleConfirmDelete = async () => {
+        if (!rowToDelete) return;
+
+        let resolution = deleteResolution;
+
+        if (onDeleteConfirm) {
+            try {
+                const action = await onDeleteConfirm(rowToDelete);
+                resolution = { ...resolution, action };
+            } catch (err) {
+                showSnackbar(err.message || 'Erreur lors de la suppression', 'error');
+                isDeleteDialogOpenRef.current = false;
+                setOpenDeleteDialog(false);
+                setRowToDelete(null);
+                setDeleteResolution(null);
+                return;
             }
-            isDeleteDialogOpenRef.current = false;
-            setOpenDeleteDialog(false);
-            setRowToDelete(null);
-            setDeleteResolution(null);
         }
+
+        if (resolution?.action === 'archive') {
+            setRows((prev) => prev.map((r) => r.id === rowToDelete.id ? { ...r, archived: true } : r));
+            showSnackbar(deleteResolution?.message || 'Élément archivé', 'info');
+        } else {
+            setRows((prev) => prev.filter((row) => row.id !== rowToDelete.id));
+        }
+        isDeleteDialogOpenRef.current = false;
+        setOpenDeleteDialog(false);
+        setRowToDelete(null);
+        setDeleteResolution(null);
     };
 
     const handleCancelDelete = () => {
@@ -542,7 +566,7 @@ export default function FullFeaturedCrudGrid({
     }, [apiRef, customColumns, validateRow, showSnackbar]);
 
     // ─── Validation et commit d'une ligne ─────────────────────────────────────
-    const processRowUpdate = (newRow, oldRow) => {
+    const processRowUpdate = async (newRow, oldRow) => {
         // Ligne supprimée entre-temps (ex. annulation d'une nouvelle ligne)
         if (!rows.find((row) => row.id === newRow.id)) return oldRow;
 
@@ -555,13 +579,19 @@ export default function FullFeaturedCrudGrid({
         }
 
         setShowErrors(false);
-        const updatedRow = { ...newRow, isNew: false };
+        let updatedRow = { ...newRow, isNew: false };
+
+        if (onSave) {
+            // Peut lever une Error (message affiché via onProcessRowUpdateError)
+            updatedRow = await onSave(newRow, !!newRow.isNew);
+        }
+
         setRows((prev) => prev.map((row) => (row.id === newRow.id ? updatedRow : row)));
         showSnackbar(msgSuccess, 'success');
 
         // Après re-tri, scroll et focus sur la nouvelle ligne sauvegardée
         if (newRow.isNew) {
-            justSavedNewRowIdRef.current = newRow.id;
+            justSavedNewRowIdRef.current = updatedRow.id;
             setTimeout(() => {
                 const savedId = justSavedNewRowIdRef.current;
                 if (!savedId) return;

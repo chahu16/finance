@@ -45,7 +45,7 @@ exports.archiverCompte = async (req, res) => {
         const compteDoc = await compte.findByIdAndUpdate(
             req.body.id,
             { $set: { archive: !!req.body.archive } },
-            { new: true }
+            { returnDocument: 'after' }
         );
         res.status(200).json(compteDoc);
     } catch (error) {
@@ -103,7 +103,7 @@ exports.modificationCompte = async (req, res) => {
                     personneProprietaire: personneProprietaire ?? 0,
                 }
             },
-            { new: true }
+            { returnDocument: 'after' }
         );
 
         res.status(200).json(formaterPourFront(compteDoc));
@@ -128,7 +128,7 @@ exports.suppressionCompte = async (req, res) => {
             const compteDoc = await compte.findByIdAndUpdate(
                 id,
                 { $set: { archive: true } },
-                { new: true }
+                { returnDocument: 'after' }
             );
             return res.status(200).json({ action: 'archive', compte: compteDoc });
         }
