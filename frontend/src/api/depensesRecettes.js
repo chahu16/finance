@@ -16,6 +16,8 @@ const fromApi = (doc) => ({
     chequeEnCours: !!doc.chequeEnCours,
     depenseRecettesAMasquer: !!doc.depenseRecettesAMasquer,
     pourcentageMoi: Array.isArray(doc.parts) && doc.parts.length > 0 ? doc.parts[0] : 50,
+    fraisFixePeriode: doc.fraisFixePeriode ?? null,
+    fraisFixeRef: doc.fraisFixeRef ?? null,
 });
 
 // Mapping Frontend → Backend
@@ -31,6 +33,8 @@ const toApi = (row) => ({
     fraisFixe: !!row.fraisFixe,
     chequeEnCours: !!row.chequeEnCours,
     depenseRecettesAMasquer: !!row.depenseRecettesAMasquer,
+    fraisFixePeriode: row.fraisFixePeriode ?? null,
+    fraisFixeRef: row.fraisFixeRef ?? null,
     parts: [
         row.pourcentageMoi ?? 50,
         row.pourcentageMoi != null ? 100 - row.pourcentageMoi : 50,
@@ -62,5 +66,6 @@ export const saveDepenseRecette = async (row, isNew) => {
 };
 
 export const deleteDepenseRecette = async (row) => {
+    if (!isMongoId(row.id)) return; // ligne jamais persistée en base — suppression locale uniquement
     await post('/suppression-depense-recette', { id: row.id });
 };

@@ -21,16 +21,14 @@ function StatCard({ compte, rows, compteData, virementInternesRows = [] }) {
         const currentMonth = now.getMonth();
         const currentYear = now.getFullYear();
 
-        const soldeMoisCourant = soldeInitial
-            + rows
-                .filter(r => {
-                    if (r.depenseRecettesAMasquer) return false;
-                    if (!r.dateDepensesRecettes) return false;
-                    const d = new Date(r.dateDepensesRecettes);
-                    return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
-                })
-                .reduce((acc, r) => acc + (r.recettes || 0) - (r.depenses || 0), 0)
-            - sommeDeCote;
+        const soldeMoisCourant = rows
+            .filter(r => {
+                if (r.depenseRecettesAMasquer) return false;
+                if (!r.dateDepensesRecettes) return false;
+                const d = new Date(r.dateDepensesRecettes);
+                return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
+            })
+            .reduce((acc, r) => acc + (r.depenses || 0), 0);
 
         const virementNet = virementInternesRows.reduce((acc, v) => {
             if (v.compteDestination === compte) return acc + (v.montant || 0);

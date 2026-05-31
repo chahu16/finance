@@ -597,8 +597,13 @@ export default function FullFeaturedCrudGrid({
                 if (!savedId) return;
                 justSavedNewRowIdRef.current = null;
                 const firstField = customColumns[0]?.field;
+                const sortedIds = apiRef.current.getSortedRowIds();
+                const rowIndex = sortedIds.indexOf(savedId);
+                if (rowIndex !== -1) {
+                    apiRef.current.scrollToIndexes({ rowIndex });
+                }
+                apiRef.current.selectRow(savedId, true, true);
                 apiRef.current.setCellFocus(savedId, firstField);
-                apiRef.current.getCellElement(savedId, firstField)?.scrollIntoView({ block: 'nearest' });
             }, 150);
         }
         return updatedRow;

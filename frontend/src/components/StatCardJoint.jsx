@@ -62,19 +62,19 @@ function StatCardJoint({ compte, rows, compteData, compteJointConfig, virementIn
             }, 0);
 
         // ── Global ─────────────────────────────────────────────────────────────────
-        const globalMois     = soldeInitial + sum(rowsMois, net) - sommeDeCote;
+        const globalMois     = sum(rowsMois, r => r.depenses || 0);
         const globalTheo     = soldeInitial + sum(rows,     net) + virementNet     - sommeDeCote;
         const globalInstantT = soldeInitial + sum(rowsDate, net) + virementNetDate - sommeDeCote;
 
         // ── Personne 1 ─────────────────────────────────────────────────────────────
         const p1Base     = soldeInitial * pctSoldeInitial - sommeDeCote * pctSoldeInitial;
-        const p1Mois     = p1Base + sum(rowsMois, r => net(r) * pctMoi(r));
+        const p1Mois     = sum(rowsMois, r => (r.depenses || 0) * pctMoi(r));
         const p1Theo     = p1Base + sum(rows,     r => net(r) * pctMoi(r)) + virementNet;
         const p1InstantT = p1Base + sum(rowsDate, r => net(r) * pctMoi(r)) + virementNetDate;
 
         // ── Personne 2 ─────────────────────────────────────────────────────────────
         const p2Base     = soldeInitial * (1 - pctSoldeInitial) - sommeDeCote * (1 - pctSoldeInitial);
-        const p2Mois     = p2Base + sum(rowsMois, r => net(r) * (1 - pctMoi(r)));
+        const p2Mois     = sum(rowsMois, r => (r.depenses || 0) * (1 - pctMoi(r)));
         const p2Theo     = p2Base + sum(rows,     r => net(r) * (1 - pctMoi(r)));
         const p2InstantT = p2Base + sum(rowsDate, r => net(r) * (1 - pctMoi(r)));
 
@@ -82,7 +82,8 @@ function StatCardJoint({ compte, rows, compteData, compteJointConfig, virementIn
             globalMois, globalTheo, globalInstantT,
             p1Mois, p1Theo, p1InstantT,
             p2Mois, p2Theo, p2InstantT,
-            color: getCardColor(globalInstantT, seuil, seuilOrange),
+            color:   getCardColor(globalInstantT, seuil, seuilOrange),
+            p1Color: getCardColor(p1InstantT, seuil * pctSoldeInitial, seuilOrange),
             monthLabel: getMonthLabel(now),
             p1Label: compteJointConfig.personne1 || 'Moi',
             p2Label: compteJointConfig.personne2 || 'Autre',
@@ -93,7 +94,7 @@ function StatCardJoint({ compte, rows, compteData, compteJointConfig, virementIn
         globalMois, globalTheo, globalInstantT,
         p1Mois, p1Theo, p1InstantT,
         p2Mois, p2Theo, p2InstantT,
-        color, monthLabel, p1Label, p2Label,
+        color, p1Color, monthLabel, p1Label, p2Label,
     } = stats;
 
     return (
@@ -141,7 +142,7 @@ function StatCardJoint({ compte, rows, compteData, compteJointConfig, virementIn
                     <Divider sx={colDividerSx} />
                     <Box sx={colInstantRowSx}>
                         <Typography sx={colInstantLabelSx}>Instant T :</Typography>
-                        <Typography sx={colInstantGlobalValueSx(color)}>{formatEuro(p1InstantT)}</Typography>
+                        <Typography sx={colInstantGlobalValueSx(p1Color)}>{formatEuro(p1InstantT)}</Typography>
                     </Box>
                 </Box>
 

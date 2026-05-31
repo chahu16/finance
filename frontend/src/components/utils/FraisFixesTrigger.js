@@ -32,34 +32,70 @@ export function computeFraisFixeTrigger(ff, today) {
 
         // Clamp le jour au nombre de jours réels du mois cible
         const effectiveDayThis = Math.min(jourPrelevement, daysInMonth(y, m));
-        let dueDate = new Date(y, m, effectiveDayThis);
-        dueDate.setHours(0, 0, 0, 0);
+        const dueDateThis = new Date(y, m, effectiveDayThis);
+        dueDateThis.setHours(0, 0, 0, 0);
 
-        // L'échéance du mois courant est-elle déjà passée ?
-        // Utilisé pour ne supprimer un placeholder que si l'occurrence est vraiment révolue,
-        // et non simplement parce que la fenêtre de 2 jours n'est pas encore ouverte.
-        const occurrencePast = dueDate < today;
+        const occurrencePast = dueDateThis < today;
+
+        // Déclenchement 2 jours avant l'échéance du mois courant
+        const triggerDateThis = new Date(y, m, jourPrelevement - 2);
+        triggerDateThis.setHours(0, 0, 0, 0);
+
+        // Clé de période : année + mois 0-indexé de l'occurrence courante
+        const triggerPeriode = `${y}-${m}`;
 
         if (occurrencePast) {
-            // Déjà passé ce mois-ci → mois suivant
-            const effectiveDayNext = Math.min(jourPrelevement, daysInMonth(y, m + 1));
-            dueDate = new Date(y, m + 1, effectiveDayNext);
+            // L'échéance est passée : on reste en fenêtre jusqu'à l'ouverture du
+            // prochain déclenchement (J-2 du mois suivant), sans limite de durée.
+            // La déduplication par triggerPeriode empêche les doublons ; la ligne
+            // persiste jusqu'à saisie d'une date par l'utilisateur.
+            const nextTriggerDate = new Date(y, m + 1, jourPrelevement - 2);
+            nextTriggerDate.setHours(0, 0, 0, 0);
+
+            // Quand jourPrelevement <= 2, J-2 du mois suivant tombe dans le mois
+            // courant (ou avant). Si today >= nextTriggerDate on est déjà dans la
+            // fenêtre du mois suivant : on bascule sur cette occurrence.
+            if (today >= nextTriggerDate) {
+                const nextMonthAbs = y * 12 + m + 1;
+                const ny = Math.floor(nextMonthAbs / 12);
+                const nm = nextMonthAbs % 12;
+                return {
+                    inTriggerWindow: true,
+                    occurrencePast: false,
+                    triggerDate: nextTriggerDate,
+                    triggerPeriode: `${ny}-${nm}`,
+                    occurrenceLabel: null,
+                    isDateInCurrentPeriod: (date) => {
+                        const d = new Date(date);
+                        return d.getFullYear() === ny && d.getMonth() === nm;
+                    },
+                };
+            }
+
+            const inTriggerWindow = today >= triggerDateThis && today < nextTriggerDate;
+
+            return {
+                inTriggerWindow,
+                occurrencePast: !inTriggerWindow,
+                triggerDate: triggerDateThis,
+                triggerPeriode,
+                occurrenceLabel: null,
+                isDateInCurrentPeriod: (date) => {
+                    const d = new Date(date);
+                    return d.getFullYear() === y && d.getMonth() === m;
+                },
+            };
         }
 
-        const dueYear = dueDate.getFullYear();
-        const dueMonth = dueDate.getMonth();
-        // Déclenchement 2 jours avant (JavaScript gère le débordement vers le mois précédent)
-        const triggerDate = new Date(dueYear, dueMonth, jourPrelevement - 2);
-        triggerDate.setHours(0, 0, 0, 0);
-
         return {
-            inTriggerWindow: today >= triggerDate,
-            occurrencePast,
-            triggerDate,
+            inTriggerWindow: today >= triggerDateThis,
+            occurrencePast: false,
+            triggerDate: triggerDateThis,
+            triggerPeriode,
             occurrenceLabel: null,
             isDateInCurrentPeriod: (date) => {
                 const d = new Date(date);
-                return d.getFullYear() === dueYear && d.getMonth() === dueMonth;
+                return d.getFullYear() === y && d.getMonth() === m;
             },
         };
     }
@@ -99,6 +135,7 @@ export function computeFraisFixeTrigger(ff, today) {
                 inTriggerWindow,
                 occurrencePast: !inTriggerWindow,
                 triggerDate,
+                triggerPeriode: `${dueYear}-${dueMonth}`,
                 occurrenceLabel,
                 isDateInCurrentPeriod: (date) => {
                     const d = new Date(date);

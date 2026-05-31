@@ -19,6 +19,7 @@ import './App.css';
 import FullFeaturedCrudGrid from './components/DataGrid.jsx';
 import StatCard from './components/StatCard.jsx';
 import StatCardJoint from './components/StatCardJoint.jsx';
+import DepensesChart from './components/DepensesChart.jsx';
 import { validateRow } from './components/utils/DepensesRecettesValidation.js';
 import { validateRow as validateCompteRow } from './components/utils/ComptesValidation.js';
 import { validateRow as validateCompteJointRow } from './components/utils/CompteJointValidation.js';
@@ -51,6 +52,7 @@ function App() {
     const [comptesRows, setComptesRows] = useState([]);
     const [virementInternesRows, setVirementInternesRows] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
+    const [loadError, setLoadError] = useState(false);
 
     const onSaveDepenseRecette = useCallback(async (row, isNew) => {
         return saveDepenseRecette(row, isNew);
@@ -84,7 +86,7 @@ function App() {
                 setFraisFixesRows(fraisFixes);
                 setVirementInternesRows(virements);
             })
-            .catch((err) => console.error('Chargement initial:', err))
+            .catch((err) => { console.error('Chargement initial:', err); setLoadError(true); })
             .finally(() => setIsLoading(false));
     }, []);
 
@@ -137,67 +139,51 @@ function App() {
         return () => clearTimeout(idRef.current);
     }, []);
 
-    // Synchronise les lignes sans date auto-ajoutées avec l'état courant des frais fixes :
-    // - hors fenêtre → supprime la ligne sans date correspondante
-    // - dans la fenêtre → ajoute la ligne si absente
+    // Ajoute les placeholders de frais fixes dès que la fenêtre de déclenchement est ouverte.
+    // Règles :
+    //   - Fenêtre Mensuel : J-2 jusqu'au J-2 du mois suivant (sans limite de durée).
+    //   - Un seul placeholder null-date par frais fixe par période (clé : fraisFixePeriode).
+    //   - Si le mois précédent n'est pas confirmé, le mois suivant crée quand même sa ligne.
+    //   - Aucune suppression automatique : le placeholder reste jusqu'à saisie d'une date.
     useEffect(() => {
         const today = new Date();
         today.setHours(0, 0, 0, 0);
 
         setRows(prevRows => {
             const toAdd = [];
-            const toRemoveIds = new Set();
 
             for (const ff of fraisFixesRows) {
                 if (ff.archived) continue;
 
                 const trigger = computeFraisFixeTrigger(ff, today);
 
-                // Description enrichie de l'étiquette d'occurrence pour Trimestriel / Semestriel
-                // ex. "Assurance habitation (2/3)" pour la 2ème occurrence sur 3 dans l'année.
                 const description = ff.description +
                     (trigger?.occurrenceLabel ? ` (${trigger.occurrenceLabel})` : '');
 
-                if (!trigger?.inTriggerWindow) {
-                    // Supprime le placeholder seulement si l'occurrence du mois courant est
-                    // révolue (occurrencePast). Si la fenêtre de déclenchement n'est pas encore
-                    // ouverte mais que l'échéance est toujours à venir (ex. jourPrelevement
-                    // vient d'être modifié), on conserve le placeholder existant.
-                    if (!trigger || trigger.occurrencePast) {
-                        for (const r of prevRows) {
-                            if (
-                                r.compte === ff.compte &&
-                                r.fraisFixe === true &&
-                                r.dateDepensesRecettes == null &&
-                                (r.description === ff.description ||
-                                 r.description.startsWith(`${ff.description} (`))
-                            ) {
-                                toRemoveIds.add(r.id);
-                            }
-                        }
-                    }
-                    continue;
-                }
+                if (!trigger?.inTriggerWindow) continue;
 
-                // Dans la fenêtre : ajoute si pas encore présent
-                // - sans date : un placeholder existe déjà pour cette occurrence
-                // - daté dans la période ET postérieur à l'ouverture de la fenêtre :
-                //   le paiement a déjà été confirmé (ne pas créer de doublon).
-                //   On exige >= triggerDate pour éviter qu'un paiement enregistré avant
-                //   la fenêtre (ex. avec un ancien jourPrelevement) bloque la création.
-                const alreadyHandled = prevRows.some(r =>
-                    !toRemoveIds.has(r.id) &&
-                    r.compte === ff.compte &&
-                    r.description === description &&
-                    r.fraisFixe === true &&
-                    (
-                        r.dateDepensesRecettes == null ||
+                // Déjà traité si :
+                //   a) un placeholder null-date de la MÊME période existe déjà (via fraisFixeRef ou description)
+                //   b) un paiement confirmé dans la période courante après l'ouverture existe
+                //      (via fraisFixeRef — fiable même si la description a changé — ou description)
+                // Un placeholder d'une période différente ne bloque pas la création.
+                const alreadyHandled = prevRows.some(r => {
+                    if (r.compte !== ff.compte) return false;
+                    const matchRef = r.fraisFixeRef === ff.id;
+                    const matchDesc = r.description === description;
+                    if (!matchRef && !matchDesc) return false;
+                    return (
+                        (r.fraisFixe === true && r.dateDepensesRecettes == null && r.fraisFixePeriode === trigger.triggerPeriode) ||
                         (
+                            r.dateDepensesRecettes != null &&
                             trigger.isDateInCurrentPeriod(r.dateDepensesRecettes) &&
-                            new Date(r.dateDepensesRecettes) >= trigger.triggerDate
+                            (
+                                (matchRef && r.fraisFixePeriode === trigger.triggerPeriode) ||
+                                new Date(r.dateDepensesRecettes) >= trigger.triggerDate
+                            )
                         )
-                    )
-                );
+                    );
+                });
 
                 if (!alreadyHandled) {
                     toAdd.push({
@@ -213,13 +199,14 @@ function App() {
                         depenseRecettesAMasquer: false,
                         dateDepensesRecettes: null,
                         pourcentageMoi: ff.pourcentageMoi ?? null,
+                        fraisFixePeriode: trigger.triggerPeriode,
+                        fraisFixeRef: ff.id,
                     });
                 }
             }
 
-            if (toAdd.length === 0 && toRemoveIds.size === 0) return prevRows;
-            const filtered = toRemoveIds.size > 0 ? prevRows.filter(r => !toRemoveIds.has(r.id)) : prevRows;
-            return toAdd.length > 0 ? [...toAdd, ...filtered] : filtered;
+            if (toAdd.length === 0) return prevRows;
+            return [...toAdd, ...prevRows];
         });
     }, [fraisFixesRows, todayKey]);
 
@@ -258,6 +245,12 @@ function App() {
         const isDuplicate = comptesRows.some(r => r.id !== row.id && r.nomCompte === row.nomCompte);
         if (isDuplicate) {
             errors.nomCompte = 'Ce nom de compte existe déjà';
+        }
+        if (row.compteJoint) {
+            const hasOtherJoint = comptesRows.some(r => r.id !== row.id && r.compteJoint && !r.archived);
+            if (hasOtherJoint) {
+                errors.compteJoint = 'Un seul compte joint est autorisé. Désactivez l\'autre d\'abord.';
+            }
         }
         return errors;
     }, [comptesRows]);
@@ -522,6 +515,16 @@ function App() {
         );
     }
 
+    if (loadError) {
+        return (
+            <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: '100vh', p: 3 }}>
+                <Alert severity="error" sx={{ maxWidth: 480 }}>
+                    Impossible de contacter le serveur. Vérifiez que le backend et la base de données sont démarrés, puis rechargez la page.
+                </Alert>
+            </Box>
+        );
+    }
+
     return (
         <Box sx={{ width: '100%' }}>
 
@@ -561,7 +564,9 @@ function App() {
 
             {/* ─── Tableau de bord ──────────────────────────────────────────── */}
             {tab === 0 && (
-                <Box sx={{ p: 3 }} />
+                <Box sx={{ p: 3 }}>
+                    <DepensesChart rows={rows} />
+                </Box>
             )}
 
             {/* ─── Dépenses / Recettes ──────────────────────────────────────── */}

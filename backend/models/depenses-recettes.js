@@ -39,6 +39,9 @@ const depensesRecettesSchema = mongoose.Schema({
         ref: 'frais-fixe',
         default: null
     },
+    // Identifiant de la période de déclenchement — ex. "2026-4" pour mai 2026 (mois 0-indexé)
+    // Permet la déduplication par période : un placeholder null-date par frais fixe par période.
+    fraisFixePeriode: { type: String, default: null },
     parts: { type: [Number], default: [50, 50] },
 }, { timestamps: true });
 
