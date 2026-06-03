@@ -64,11 +64,17 @@ function App() {
     }, []);
 
     const onSaveVirementInterne = useCallback(async (row, isNew) => {
-        return saveVirementInterne(row, isNew);
+        const savedRow = await saveVirementInterne(row, isNew);
+        setVirementInternesRows(prev => isNew
+            ? [savedRow, ...prev.filter(r => r.id !== row.id)]
+            : prev.map(r => r.id === row.id ? savedRow : r)
+        );
+        return savedRow;
     }, []);
 
     const onDeleteConfirmVirementInterne = useCallback(async (row) => {
         await deleteVirementInterne(row);
+        setVirementInternesRows(prev => prev.filter(r => r.id !== row.id));
         return 'delete';
     }, []);
 
@@ -640,7 +646,7 @@ function App() {
                             <AccordionSummary expandIcon={<ExpandMoreIcon />}>
                                 {label}
                             </AccordionSummary>
-                            <AccordionDetails sx={(label === 'Comptes' || label === 'Frais fixes') ? { p: 0 } : undefined}>
+                            <AccordionDetails sx={(label === 'Comptes' || label === 'Frais fixes' || label === 'Virements internes') ? { p: 0 } : undefined}>
                                 {label === 'Frais fixes' && (
                                     <FullFeaturedCrudGrid
                                         columns={fraisFixesColumns}
