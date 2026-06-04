@@ -78,6 +78,9 @@ function StatCardJoint({ compte, rows, compteData, compteJointConfig, virementIn
         const p2Theo     = p2Base + sum(rows,     r => net(r) * (1 - pctMoi(r)));
         const p2InstantT = p2Base + sum(rowsDate, r => net(r) * (1 - pctMoi(r)));
 
+        const p1Label = compteJointConfig.personne1 || 'Moi';
+        const p2Label = compteJointConfig.personne2 || 'Autre';
+
         return {
             globalMois, globalTheo, globalInstantT,
             p1Mois, p1Theo, p1InstantT,
@@ -85,8 +88,8 @@ function StatCardJoint({ compte, rows, compteData, compteJointConfig, virementIn
             color:   getCardColor(globalInstantT, seuil, seuilOrange),
             p1Color: getCardColor(p1InstantT, seuil * pctSoldeInitial, seuilOrange),
             monthLabel: getMonthLabel(now),
-            p1Label: compteJointConfig.personne1 || 'Moi',
-            p2Label: compteJointConfig.personne2 || 'Autre',
+            p1Label,
+            p2Label,
         };
     }, [rows, virementInternesRows, compte, soldeInitial, sommeDeCote, seuil, seuilOrange, compteJointConfig]);
 

@@ -28,7 +28,7 @@ function getLast13Months() {
     return months;
 }
 
-function buildChartData(rows) {
+function buildChartData(rows, compteJointNom, pourcentageDefaut) {
     const months = getLast13Months();
     const buckets = {};
     months.forEach(m => {
@@ -42,8 +42,11 @@ function buildChartData(rows) {
         const key = buildMonthKey(row.dateDepensesRecettes);
         if (!buckets[key]) continue;
 
-        const dep = row.depenses ?? 0;
-        const rec = row.recettes ?? 0;
+        const isJoint = compteJointNom && row.compte === compteJointNom;
+        const pct = isJoint ? ((row.pourcentageMoi ?? pourcentageDefaut) / 100) : 1;
+
+        const dep = (row.depenses ?? 0) * pct;
+        const rec = (row.recettes ?? 0) * pct;
         const desc = (row.description ?? '').toLowerCase();
 
         if (dep > 0) {
@@ -72,11 +75,14 @@ function buildChartData(rows) {
     };
 }
 
-function DepensesChart({ rows }) {
+function DepensesChart({ rows, compteJointNom, pourcentageDefaut = 50 }) {
     const chartRef    = useRef(null);
     const chartInst   = useRef(null);
 
-    const { labels, series } = useMemo(() => buildChartData(rows), [rows]);
+    const { labels, series } = useMemo(
+        () => buildChartData(rows, compteJointNom, pourcentageDefaut),
+        [rows, compteJointNom, pourcentageDefaut]
+    );
 
     useEffect(() => {
         if (chartInst.current) {

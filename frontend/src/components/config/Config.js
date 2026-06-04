@@ -19,7 +19,7 @@ export const getMonthLabel = (date = new Date()) => {
 // Détermine la couleur de la carte selon le solde instant T par rapport aux seuils.
 export const getCardColor = (instantT, seuil, seuilOrange) => {
     const seuilVal = seuil ?? 0;
-    const orangeThreshold = seuilVal * ((seuilOrange ?? 0) / 100);
+    const orangeThreshold = seuilVal * (1 - (seuilOrange ?? 0) / 100);
     if (instantT > seuilVal) return 'vert';
     if (instantT > orangeThreshold) return 'orange';
     return 'rouge';

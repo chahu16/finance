@@ -19,6 +19,7 @@ import './App.css';
 import FullFeaturedCrudGrid from './components/DataGrid.jsx';
 import StatCard from './components/StatCard.jsx';
 import StatCardJoint from './components/StatCardJoint.jsx';
+import StatCardRecap from './components/StatCardRecap.jsx';
 import DepensesChart from './components/DepensesChart.jsx';
 import { validateRow } from './components/utils/DepensesRecettesValidation.js';
 import { validateRow as validateCompteRow } from './components/utils/ComptesValidation.js';
@@ -117,6 +118,7 @@ function App() {
     }, []);
     const [showArchivedComptes, setShowArchivedComptes] = useState(false);
     const [showArchivedFraisFixes, setShowArchivedFraisFixes] = useState(false);
+    const [expandedSection, setExpandedSection] = useState(null);
     const [compteJointConfig, setCompteJointConfig] = useState({
         personne1: '',
         personne2: '',
@@ -349,6 +351,12 @@ function App() {
         [activeComptesOptions]
     );
 
+    // Tous les comptes non-archivés, non-joints avec soldeInitial → récapitulatif global
+    const comptesRecapData = useMemo(
+        () => comptesRows.filter(c => !c.archived && !c.compteJoint && c.soldeInitial != null),
+        [comptesRows]
+    );
+
     // Comptes actifs avec soldeInitial défini, non joints, au moins une transaction → StatCards
     const comptesActifsData = useMemo(
         () => comptesRows
@@ -534,9 +542,18 @@ function App() {
     return (
         <Box sx={{ width: '100%' }}>
 
-            {/* ─── StatCards (toujours visibles) ────────────────────────────── */}
+            {/* ─── StatCards + Récap (toujours visibles, même conteneur) ─────── */}
             <Box sx={{ p: 3, pb: 0 }}>
                 <Box sx={statCardsContainerSx}>
+                    <Box sx={{ width: '100%' }}>
+                        <StatCardRecap
+                            comptesData={comptesRecapData}
+                            rowsByCompte={rowsByCompte}
+                            virementInternesRows={virementInternesRows}
+                            compteJointData={compteJointData}
+                            compteJointConfig={compteJointConfig}
+                        />
+                    </Box>
                     {comptesActifsData.map(compteData => (
                         <StatCard
                             key={compteData.nomCompte}
@@ -571,7 +588,7 @@ function App() {
             {/* ─── Tableau de bord ──────────────────────────────────────────── */}
             {tab === 0 && (
                 <Box sx={{ p: 3 }}>
-                    <DepensesChart rows={rows} />
+                    <DepensesChart rows={rows} compteJointNom={compteJointNom} pourcentageDefaut={compteJointConfig.pourcentageDefaut ?? 50} />
                 </Box>
             )}
 
@@ -632,7 +649,9 @@ function App() {
                             disableGutters
                             elevation={0}
                             square
+                            expanded={expandedSection === label}
                             onChange={(_, expanded) => {
+                                setExpandedSection(expanded ? label : null);
                                 if (label === 'Comptes' && expanded) setShowArchivedComptes(false);
                                 if (label === 'Frais fixes' && expanded) setShowArchivedFraisFixes(false);
                             }}
