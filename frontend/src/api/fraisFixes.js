@@ -39,6 +39,8 @@ const fromApi = (doc) => {
         periodicite,
         pourcentageMoi: doc.parts?.[0] ?? null,
         archived: !!doc.archive,
+        categorie: doc.categorie || '',
+        sousCategorie: doc.sousCategorie || '',
     };
 };
 
@@ -59,6 +61,7 @@ const toApi = (row) => {
         montant: row.montant,
         periodicite: row.periodicite,
         parts: pct != null && !isNaN(pct) ? [pct, 100 - pct] : [50, 50],
+        sousCategorie: row.sousCategorie || null,
     };
 };
 

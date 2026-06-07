@@ -5,8 +5,10 @@ export const initialSort = [
     { field: 'dateDepensesRecettes', sort: 'desc' },
 ];
 
-// Règle métier : cocher "Chèque en cours" vide automatiquement la date, et inversement
-export const onFieldChange = chequeEnCoursOnFieldChange;
+// Règle métier : cocher "Chèque en cours" vide la date, et inversement.
+export const onFieldChange = (args) => {
+    chequeEnCoursOnFieldChange(args);
+};
 
 export const snackbarMessages = {
     success: 'Dépense / recette enregistrée',
@@ -56,6 +58,16 @@ export const DepensesRecettesColumns = [
         editable: true,
         align: 'center',
         valueFormatter: formatEuro,
+    },
+    {
+        field: 'sousCategorie',
+        headerName: 'Sous-catégorie',
+        type: 'singleSelect',
+        width: 200,
+        editable: true,
+        align: 'center',
+        headerAlign: 'center',
+        valueOptions: [], // injecté dynamiquement depuis App.js (toutes sous-catégories du type)
     },
     {
         field: 'noteDeFrais',

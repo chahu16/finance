@@ -43,6 +43,7 @@ const depensesRecettesSchema = mongoose.Schema({
     // Permet la déduplication par période : un placeholder null-date par frais fixe par période.
     fraisFixePeriode: { type: String, default: null },
     parts: { type: [Number], default: [50, 50] },
+    sousCategorie: { type: mongoose.Schema.Types.ObjectId, ref: 'categories', default: null },
 }, { timestamps: true });
 
 module.exports = mongoose.model('depenses-recettes', depensesRecettesSchema);

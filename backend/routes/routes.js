@@ -6,6 +6,7 @@ const gestionComptes = require('../controllers/gestion_comptes.js');
 const gestionFraisFixes = require('../controllers/gestion_frais-fixe.js');
 const gestionPlafonds = require('../controllers/gestion_plafond-notes-frais.js');
 const gestionStatsMensuelles = require('../controllers/gestion_stats.js');
+const gestionCategories = require('../controllers/gestion_categories.js');
 
 router.use(express.json());
 
@@ -45,5 +46,10 @@ router.post('/ajout-plafond-notes-frais', gestionPlafonds.ajoutPlafond);
 router.post('/suppression-plafond-notes-frais', gestionPlafonds.suppressionPlafond);
 
 router.get('/stats-mensuelles', gestionStatsMensuelles.statsMensuelles);
+
+router.get('/liste-categories', gestionCategories.listeCategories);
+router.post('/ajout-categorie', gestionCategories.ajoutCategorie);
+router.post('/modification-categorie', gestionCategories.modificationCategorie);
+router.post('/suppression-categorie', gestionCategories.suppressionCategorie);
 
 module.exports = router;

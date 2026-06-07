@@ -12,6 +12,8 @@ export const snackbarMessages = {
 export const extraRowDefaults = {
     archived: false,
     pourcentageMoi: null,
+    categorie: '',
+    sousCategorie: '',
 };
 
 // Réinitialise jourPrelevement si la périodicité passe en non-mensuel et que la valeur > 12
@@ -55,7 +57,19 @@ export const FraisFixesColumns = [
         type: 'singleSelect',
         width: 110,
         editable: true,
+        align: 'center',
+        headerAlign: 'center',
         valueOptions: ['Dépense', 'Recette'],
+    },
+    {
+        field: 'sousCategorie',
+        headerName: 'Sous-catégorie',
+        type: 'singleSelect',
+        width: 200,
+        editable: true,
+        align: 'center',
+        headerAlign: 'center',
+        valueOptions: [], // injecté dynamiquement depuis App.js (toutes sous-catégories du type)
     },
     {
         field: 'montant',

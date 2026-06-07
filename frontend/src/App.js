@@ -26,13 +26,16 @@ import { validateRow as validateCompteRow } from './components/utils/ComptesVali
 import { validateRow as validateCompteJointRow } from './components/utils/CompteJointValidation.js';
 import { validateRow as validateVirementRow } from './components/utils/VirementInternesValidation.js';
 import { validateRow as validateFraisFixeBaseRow } from './components/utils/FraisFixesValidation.js';
+import { GridEditSousCategorieCell } from './components/utils/SousCategorieCell.jsx';
 import { computeFraisFixeTrigger } from './components/utils/FraisFixesTrigger.js';
 import { DepensesRecettesColumns, snackbarMessages, initialSort, onFieldChange } from './components/gridConfigs/DepensesRecettesGrid.js';
 import { fetchDepensesRecettes, saveDepenseRecette, deleteDepenseRecette } from './api/depensesRecettes.js';
+import { fetchCategories, saveCategorie, deleteCategorie } from './api/categories.js';
+import { CategoriesManager } from './components/CategoriesManager.jsx';
 import { ComptesColumns, snackbarMessages as comptesMessages, initialSort as comptesInitialSort, extraRowDefaults as comptesExtraRowDefaults } from './components/gridConfigs/ComptesGrid.js';
 import { fetchComptes, saveCompte, deleteCompte, toggleArchiveCompte } from './api/comptes.js';
 import { fetchFraisFixes, saveFraisFixe, deleteFraisFixe, toggleArchiveFraisFixe } from './api/fraisFixes.js';
-import { CompteJointColumns, snackbarMessages as compteJointMessages, initialSort as compteJointInitialSort, onFieldChange as compteJointOnFieldChange } from './components/gridConfigs/CompteJointGrid.js';
+import { CompteJointColumns, snackbarMessages as compteJointMessages, initialSort as compteJointInitialSort, onFieldChange as compteJointOnFieldChangeBase } from './components/gridConfigs/CompteJointGrid.js';
 import { VirementInternesColumns, snackbarMessages as virementMessages, initialSort as virementInitialSort } from './components/gridConfigs/VirementInternesGrid.js';
 import { fetchVirementInternes, saveVirementInterne, deleteVirementInterne } from './api/virementInternes.js';
 import { FraisFixesColumns, snackbarMessages as fraisFixesMessages, initialSort as fraisFixesInitialSort, extraRowDefaults as fraisFixesExtraRowDefaults, onFieldChange as fraisFixesOnFieldChange } from './components/gridConfigs/FraisFixesGrid.js';
@@ -44,6 +47,7 @@ const PARAMETRAGE_SECTIONS = [
     'Comptes',
     'Frais fixes',
     'Virements internes',
+    'Catégories',
     'Paramétrage',
 ];
 
@@ -86,12 +90,14 @@ function App() {
             fetchDepensesRecettes(),
             fetchFraisFixes(),
             fetchVirementInternes(),
+            fetchCategories(),
         ])
-            .then(([comptes, depRec, fraisFixes, virements]) => {
+            .then(([comptes, depRec, fraisFixes, virements, categories]) => {
                 setComptesRows(comptes);
                 setRows(depRec);
                 setFraisFixesRows(fraisFixes);
                 setVirementInternesRows(virements);
+                setCategoriesRows(categories);
             })
             .catch((err) => { console.error('Chargement initial:', err); setLoadError(true); })
             .finally(() => setIsLoading(false));
@@ -107,6 +113,7 @@ function App() {
     }, []);
 
     const [fraisFixesRows, setFraisFixesRows] = useState([]);
+    const [categoriesRows, setCategoriesRows] = useState([]);
 
     const onSaveFraisFixe = useCallback(async (row, isNew) => {
         return saveFraisFixe(row, isNew);
@@ -114,6 +121,15 @@ function App() {
 
     const onDeleteConfirmFraisFixe = useCallback(async (row) => {
         await deleteFraisFixe(row);
+        return 'delete';
+    }, []);
+
+    const onSaveCategorie = useCallback(async (row, isNew) => {
+        return saveCategorie(row, isNew);
+    }, []);
+
+    const onDeleteConfirmCategorie = useCallback(async (row) => {
+        await deleteCategorie(row);
         return 'delete';
     }, []);
     const [showArchivedComptes, setShowArchivedComptes] = useState(false);
@@ -209,6 +225,8 @@ function App() {
                         pourcentageMoi: ff.pourcentageMoi ?? null,
                         fraisFixePeriode: trigger.triggerPeriode,
                         fraisFixeRef: ff.id,
+                        categorie: ff.categorie || '',
+                        sousCategorie: ff.sousCategorie || '',
                     });
                 }
             }
@@ -343,13 +361,34 @@ function App() {
         if (!compteJointNom && tab === 2) setTab(0);
     }, [compteJointNom, tab]);
 
-    // Colonnes dépenses/recettes avec valueOptions dynamique (= comptes actifs)
+    // Colonnes dépenses/recettes avec valueOptions dynamiques (comptes + sousCategorie selon type)
     const depensesRecettesColumns = useMemo(
-        () => DepensesRecettesColumns.map(col =>
-            col.field === 'compte' ? { ...col, valueOptions: activeComptesOptions } : col
-        ),
-        [activeComptesOptions]
+        () => DepensesRecettesColumns.map(col => {
+            if (col.field === 'compte') return { ...col, valueOptions: activeComptesOptions };
+            if (col.field === 'sousCategorie') return {
+                ...col,
+                valueOptions: (params) => {
+                    const isRecette = (params.row?.recettes ?? 0) > 0;
+                    return categoriesRows
+                        .filter(c => c.type === (isRecette ? 'Recette' : 'Dépense'))
+                        .map(c => ({ value: c.id, label: c.nom }));
+                },
+                renderEditCell: (params) => (
+                    <GridEditSousCategorieCell
+                        {...params}
+                        categoriesRows={categoriesRows}
+                        transactionType={(params.row?.recettes ?? 0) > 0 ? 'Recette' : 'Dépense'}
+                    />
+                ),
+            };
+            return col;
+        }),
+        [activeComptesOptions, categoriesRows]
     );
+
+    const depensesOnFieldChange = useCallback((args) => {
+        onFieldChange(args);
+    }, []);
 
     // Tous les comptes non-archivés, non-joints avec soldeInitial → récapitulatif global
     const comptesRecapData = useMemo(
@@ -397,14 +436,36 @@ function App() {
         return CompteJointColumns.map(col => {
             if (col.field === 'pourcentageMoi')  return { ...col, headerName: `Part ${p1} (%)` };
             if (col.field === 'pourcentageAutre') return { ...col, headerName: `Part ${p2} (%)` };
+            if (col.field === 'sousCategorie') return {
+                ...col,
+                valueOptions: (params) => {
+                    const isRecette = (params.row?.recettes ?? 0) > 0;
+                    return categoriesRows
+                        .filter(c => c.type === (isRecette ? 'Recette' : 'Dépense'))
+                        .map(c => ({ value: c.id, label: c.nom }));
+                },
+                renderEditCell: (params) => (
+                    <GridEditSousCategorieCell
+                        {...params}
+                        categoriesRows={categoriesRows}
+                        transactionType={(params.row?.recettes ?? 0) > 0 ? 'Recette' : 'Dépense'}
+                    />
+                ),
+            };
             return col;
         });
-    }, [compteJointConfig.personne1, compteJointConfig.personne2]);
+    }, [compteJointConfig.personne1, compteJointConfig.personne2, categoriesRows]);
+
+    const compteJointOnFieldChange = useCallback((args) => {
+        compteJointOnFieldChangeBase(args);
+    }, []);
 
     // Valeurs par défaut pour les nouvelles lignes du compte joint
     const compteJointExtraRowDefaults = useMemo(() => ({
         compte: compteJointNom ?? '',
         pourcentageMoi: Math.min(100, Math.max(0, compteJointConfig.pourcentageDefaut || 0)),
+        categorie: '',
+        sousCategorie: '',
     }), [compteJointNom, compteJointConfig.pourcentageDefaut]);
 
     // Tous les comptes non-archivés (virements internes + frais fixes partagent la même liste)
@@ -423,13 +484,31 @@ function App() {
         [allNonArchivedComptesOptions]
     );
 
-    // Colonnes frais fixes : valueOptions compte + renderCell pour Mon %
+    // Colonnes frais fixes : valueOptions compte + sousCategorie + renderCell pour Mon %
     // isCellEditable retiré : params.row reflète l'état persisté (toujours '' pour une nouvelle
     // ligne), ce qui empêchait l'édition du % même après sélection du compte joint.
     const fraisFixesColumns = useMemo(() => {
         return FraisFixesColumns.map(col => {
             if (col.field === 'compte') {
                 return { ...col, valueOptions: allNonArchivedComptesOptions };
+            }
+            if (col.field === 'sousCategorie') {
+                return {
+                    ...col,
+                    valueOptions: (params) => {
+                        const isRecette = params.row?.type === 'Recette';
+                        return categoriesRows
+                            .filter(c => c.type === (isRecette ? 'Recette' : 'Dépense'))
+                            .map(c => ({ value: c.id, label: c.nom }));
+                    },
+                    renderEditCell: (params) => (
+                        <GridEditSousCategorieCell
+                            {...params}
+                            categoriesRows={categoriesRows}
+                            transactionType={params.row?.type === 'Recette' ? 'Recette' : 'Dépense'}
+                        />
+                    ),
+                };
             }
             if (col.field === 'pourcentageMoi') {
                 return {
@@ -443,7 +522,7 @@ function App() {
             }
             return col;
         });
-    }, [allNonArchivedComptesOptions, compteJointNom]);
+    }, [allNonArchivedComptesOptions, compteJointNom, categoriesRows]);
 
     // onFieldChange enrichi : pré-remplit / efface pourcentageMoi selon le compte sélectionné
     const fraisFixesOnFieldChangeEnriched = useCallback((args) => {
@@ -603,11 +682,12 @@ function App() {
                         validateRow={validateRow}
                         messages={snackbarMessages}
                         initialSort={initialSort}
-                        onFieldChange={onFieldChange}
+                        onFieldChange={depensesOnFieldChange}
                         onRowsChange={setRows}
                         onSave={onSaveDepenseRecette}
                         onDeleteConfirm={onDeleteConfirmDepenseRecette}
                         rowFilter={depensesRowFilter}
+                        extraRowDefaults={{ categorie: '', sousCategorie: '' }}
                     />
                 </Box>
             )}
@@ -665,7 +745,7 @@ function App() {
                             <AccordionSummary expandIcon={<ExpandMoreIcon />}>
                                 {label}
                             </AccordionSummary>
-                            <AccordionDetails sx={(label === 'Comptes' || label === 'Frais fixes' || label === 'Virements internes') ? { p: 0 } : undefined}>
+                            <AccordionDetails sx={(label === 'Comptes' || label === 'Frais fixes' || label === 'Virements internes' || label === 'Catégories') ? { p: 0 } : undefined}>
                                 {label === 'Frais fixes' && (
                                     <FullFeaturedCrudGrid
                                         columns={fraisFixesColumns}
@@ -779,6 +859,14 @@ function App() {
                                             </Alert>
                                         )}
                                     </Box>
+                                )}
+                                {label === 'Catégories' && (
+                                    <CategoriesManager
+                                        categoriesRows={categoriesRows}
+                                        onRowsChange={setCategoriesRows}
+                                        onSave={onSaveCategorie}
+                                        onDeleteConfirm={onDeleteConfirmCategorie}
+                                    />
                                 )}
                                 {label === 'Virements internes' && (
                                     <FullFeaturedCrudGrid

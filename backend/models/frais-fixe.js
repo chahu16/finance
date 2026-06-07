@@ -17,6 +17,7 @@ const comptesFraisFixe = mongoose.Schema({
     }],
     parts: { type: [Number], default: [50, 50] },
     archive: { type: Boolean, default: false },
+    sousCategorie: { type: mongoose.Schema.Types.ObjectId, ref: 'categories', default: null },
 });
 
 module.exports = mongoose.model('frais-fixe', comptesFraisFixe);

@@ -67,6 +67,8 @@ const formaterPourFront = (doc) => {
         })),
         parts: item.parts ?? [50, 50],
         archive: !!item.archive,
+        categorie: item.sousCategorie?.groupe ?? '',
+        sousCategorie: item.sousCategorie?._id?.toString() ?? '',
     };
 };
 
@@ -74,12 +76,12 @@ const formaterPourFront = (doc) => {
 
 exports.listeFraisFixes = async (req, res) => {
     try {
-        const data = await fraisFixe.aggregate([
-            { $addFields: { jourDuMois: { $dayOfMonth: "$dateFraisFixe" } } },
-            { $sort: { jourDuMois: 1 } },
-            { $lookup: { from: 'liste-comptes', localField: 'compte', foreignField: '_id', as: 'compte' } },
-            { $unwind: { path: '$compte', preserveNullAndEmptyArrays: true } },
-        ]);
+        const data = await fraisFixe.find().populate('compte').populate('sousCategorie');
+        data.sort((a, b) => {
+            const dayA = a.dateFraisFixe ? new Date(a.dateFraisFixe).getDate() : 0;
+            const dayB = b.dateFraisFixe ? new Date(b.dateFraisFixe).getDate() : 0;
+            return dayA - dayB;
+        });
         res.status(200).json(data.map(formaterPourFront));
     } catch (error) {
         res.status(400).json({ error: error.message });
@@ -88,7 +90,7 @@ exports.listeFraisFixes = async (req, res) => {
 
 exports.ajoutFraisFixes = async (req, res) => {
     try {
-        const { compte: nomCompte, description, dateFraisFixe, periodicite, type, montant, parts } = req.body;
+        const { compte: nomCompte, description, dateFraisFixe, periodicite, type, montant, parts, sousCategorie } = req.body;
 
         const compteDoc = await compte.findOne({ nom: nomCompte });
         if (!compteDoc) return res.status(400).json({ message: `Compte introuvable : "${nomCompte}"` });
@@ -104,9 +106,11 @@ exports.ajoutFraisFixes = async (req, res) => {
             montants: [{ montant: Math.round(montant * 100), dateEffet }],
             parts: Array.isArray(parts) ? parts : [50, 50],
             archive: false,
+            sousCategorie: sousCategorie || null,
         }).save();
 
         await doc.populate('compte');
+        await doc.populate('sousCategorie');
         res.status(201).json(formaterPourFront(doc));
     } catch (error) {
         res.status(400).json({ error: error.message });
@@ -115,7 +119,7 @@ exports.ajoutFraisFixes = async (req, res) => {
 
 exports.modificationFraisFixes = async (req, res) => {
     try {
-        const { id, compte: nomCompte, dateFraisFixe, description, periodicite, type, montant, parts } = req.body;
+        const { id, compte: nomCompte, dateFraisFixe, description, periodicite, type, montant, parts, sousCategorie } = req.body;
 
         const compteDoc = await compte.findOne({ nom: nomCompte });
         if (!compteDoc) return res.status(400).json({ message: `Compte introuvable : "${nomCompte}"` });
@@ -144,6 +148,7 @@ exports.modificationFraisFixes = async (req, res) => {
                 periodicite,
                 type,
                 parts: Array.isArray(parts) ? parts : [50, 50],
+                sousCategorie: sousCategorie || null,
             }
         };
 
@@ -158,7 +163,8 @@ exports.modificationFraisFixes = async (req, res) => {
 
         const doc = await fraisFixe
             .findByIdAndUpdate(id, updateQuery, { returnDocument: 'after' })
-            .populate('compte');
+            .populate('compte')
+            .populate('sousCategorie');
 
         res.status(200).json(formaterPourFront(doc));
     } catch (error) {
@@ -181,7 +187,7 @@ exports.archiverFraisFixes = async (req, res) => {
             req.body.id,
             { $set: { archive: !!req.body.archive } },
             { returnDocument: 'after' }
-        ).populate('compte');
+        ).populate('compte').populate('sousCategorie');
         res.status(200).json(formaterPourFront(doc));
     } catch (error) {
         res.status(400).json({ error: error.message });

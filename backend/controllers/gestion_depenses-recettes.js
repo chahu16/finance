@@ -39,6 +39,7 @@ const transformerVersSchema = (data, mappingComptes = {}) => {
         fraisFixe: parseBooleen(data.fraisFixe),
         chequeEnCours: parseBooleen(data.chequeEnCours),
         depenseRecettesAMasquer: parseBooleen(data.aMasquer ?? data.depenseRecettesAMasquer),
+        sousCategorie: data.sousCategorie || null,
         parts: (() => {
             if (Array.isArray(data.parts)) return data.parts;
             const v = parseFloat(String(data.parts ?? "").replace(',', '.'));
@@ -61,6 +62,8 @@ const formaterPourFront = (doc) => {
         depenses: (item.depenses ?? 0) / 100,
         recettes: (item.recettes ?? 0) / 100,
         parts: item.parts ?? [50, 50],
+        categorie: item.sousCategorie?.groupe ?? '',
+        sousCategorie: item.sousCategorie?._id?.toString() ?? '',
     };
 };
 
@@ -96,7 +99,7 @@ exports.dataGridDepensesRecettes = async (req, res) => {
         }).populate({
             path: 'compte',
             match: { archive: { $ne: true }, estCompteJoint: { $ne: true } }
-        });
+        }).populate('sousCategorie');
 
         const dataFiltree = data.filter(d => d.compte !== null);
 
@@ -120,8 +123,8 @@ exports.ajoutDepenseRecette = async (req, res) => {
         const dataPrepared = transformerVersSchema({ ...req.body, compteId: compteDoc?._id });
         const nouvelleLigne = await new depensesRecettes(dataPrepared).save();
 
-        // Plus rapide : on peuple directement le document sauvegardé
         await nouvelleLigne.populate('compte');
+        await nouvelleLigne.populate('sousCategorie');
 
         res.status(201).json(formaterPourFront(nouvelleLigne));
     } catch (error) {
@@ -138,7 +141,7 @@ exports.modificationDepenseRecette = async (req, res) => {
             req.body.id,
             { $set: dataPrepared },
             { returnDocument: 'after' }
-        ).populate('compte');
+        ).populate('compte').populate('sousCategorie');
 
         res.status(200).json(formaterPourFront(updatedDoc));
     } catch (error) {
@@ -268,7 +271,7 @@ exports.dataGridCompteJoint = async (req, res) => {
         }).populate({
             path: 'compte',
             match: { estCompteJoint: true }
-        });
+        }).populate('sousCategorie');
 
         const dataFiltree = data.filter(d => d.compte !== null);
         const formattedData = dataFiltree.map(formaterPourFront).sort(trierParDateDesc);

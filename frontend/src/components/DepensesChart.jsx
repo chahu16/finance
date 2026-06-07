@@ -4,7 +4,8 @@ import { Chart, registerables } from 'chart.js';
 
 Chart.register(...registerables);
 
-const PAYE_LOYER_KEYWORDS = ['paye', 'loyer'];
+const REVENUES_GROUPE = 'Revenues';
+const REVENUES_KEYWORDS = ['paye', 'loyer'];
 
 function buildMonthKey(date) {
     const d = new Date(date);
@@ -32,7 +33,7 @@ function buildChartData(rows, compteJointNom, pourcentageDefaut) {
     const months = getLast13Months();
     const buckets = {};
     months.forEach(m => {
-        buckets[m] = { fraisFixes: 0, depenses: 0, notesDeFrais: 0, payeLoyer: 0 };
+        buckets[m] = { fraisFixes: 0, depenses: 0, notesDeFrais: 0, revenues: 0 };
     });
 
     for (const row of rows) {
@@ -47,7 +48,6 @@ function buildChartData(rows, compteJointNom, pourcentageDefaut) {
 
         const dep = (row.depenses ?? 0) * pct;
         const rec = (row.recettes ?? 0) * pct;
-        const desc = (row.description ?? '').toLowerCase();
 
         if (dep > 0) {
             if (row.noteDeFrais) {
@@ -59,8 +59,10 @@ function buildChartData(rows, compteJointNom, pourcentageDefaut) {
             }
         }
 
-        if (rec > 0 && PAYE_LOYER_KEYWORDS.some(kw => desc.includes(kw))) {
-            buckets[key].payeLoyer += rec;
+        const isRevenues = row.categorie === REVENUES_GROUPE
+            || (!row.categorie && REVENUES_KEYWORDS.some(kw => (row.description ?? '').toLowerCase().includes(kw)));
+        if (rec > 0 && isRevenues) {
+            buckets[key].revenues += rec;
         }
     }
 
@@ -70,7 +72,7 @@ function buildChartData(rows, compteJointNom, pourcentageDefaut) {
             fraisFixes:   Math.round(buckets[m].fraisFixes   * 100) / 100,
             depenses:     Math.round(buckets[m].depenses     * 100) / 100,
             notesDeFrais: Math.round(buckets[m].notesDeFrais * 100) / 100,
-            payeLoyer:    Math.round(buckets[m].payeLoyer    * 100) / 100,
+            revenues:    Math.round(buckets[m].revenues    * 100) / 100,
         })),
     };
 }
@@ -123,9 +125,9 @@ function DepensesChart({ rows, compteJointNom, pourcentageDefaut = 50 }) {
                         order: 2,
                     },
                     {
-                        label: 'Paye + Loyer',
+                        label: 'Revenues',
                         type: 'line',
-                        data: series.map(m => m.payeLoyer),
+                        data: series.map(m => m.revenues),
                         borderColor: '#EF9F27',
                         backgroundColor: 'rgba(239,159,39,0.08)',
                         borderWidth: 2,

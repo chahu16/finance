@@ -18,6 +18,8 @@ const fromApi = (doc) => ({
     pourcentageMoi: Array.isArray(doc.parts) && doc.parts.length > 0 ? doc.parts[0] : 50,
     fraisFixePeriode: doc.fraisFixePeriode ?? null,
     fraisFixeRef: doc.fraisFixeRef ?? null,
+    categorie: doc.categorie || '',
+    sousCategorie: doc.sousCategorie || '',
 });
 
 // Mapping Frontend → Backend
@@ -39,6 +41,7 @@ const toApi = (row) => ({
         row.pourcentageMoi ?? 50,
         row.pourcentageMoi != null ? 100 - row.pourcentageMoi : 50,
     ],
+    sousCategorie: row.sousCategorie || null,
 });
 
 // Les deux endpoints (comptes normaux + compte joint) sont chargés en parallèle

@@ -10,8 +10,10 @@ export const snackbarMessages = {
     cancel: 'Édition annulée',
 };
 
-// Règle métier identique aux dépenses/recettes : cocher "Chèque en cours" vide la date
-export const onFieldChange = chequeEnCoursOnFieldChange;
+// Règle métier identique aux dépenses/recettes : cocher "Chèque en cours" vide la date.
+export const onFieldChange = (args) => {
+    chequeEnCoursOnFieldChange(args);
+};
 
 // Colonnes de base — les headerName des colonnes % sont remplacés dynamiquement dans App.js
 // selon les noms des personnes configurés dans le Paramétrage.
@@ -49,6 +51,16 @@ export const CompteJointColumns = [
         editable: true,
         align: 'center',
         valueFormatter: formatEuro,
+    },
+    {
+        field: 'sousCategorie',
+        headerName: 'Sous-catégorie',
+        type: 'singleSelect',
+        width: 200,
+        editable: true,
+        align: 'center',
+        headerAlign: 'center',
+        valueOptions: [], // injecté dynamiquement depuis App.js (toutes sous-catégories du type)
     },
     {
         field: 'fraisFixe',
