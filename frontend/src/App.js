@@ -135,13 +135,18 @@ function App() {
     const [showArchivedComptes, setShowArchivedComptes] = useState(false);
     const [showArchivedFraisFixes, setShowArchivedFraisFixes] = useState(false);
     const [expandedSection, setExpandedSection] = useState(null);
-    const [compteJointConfig, setCompteJointConfig] = useState({
-        personne1: '',
-        personne2: '',
-        pourcentageDefaut: 50,
-        pourcentageSoldeInitialMoi: null,
+    const [compteJointConfig, setCompteJointConfig] = useState(() => {
+        try {
+            const saved = localStorage.getItem('compteJointConfig');
+            if (saved) return JSON.parse(saved);
+        } catch {}
+        return { personne1: '', personne2: '', pourcentageDefaut: 50, pourcentageSoldeInitialMoi: null };
     });
     const [soldeInitialPctWarning, setSoldeInitialPctWarning] = useState(false);
+
+    useEffect(() => {
+        localStorage.setItem('compteJointConfig', JSON.stringify(compteJointConfig));
+    }, [compteJointConfig]);
 
     // Clé du jour courant — change à minuit pour relancer le contrôle des frais fixes
     const [todayKey, setTodayKey] = useState(() => {
@@ -361,6 +366,20 @@ function App() {
         if (!compteJointNom && tab === 2) setTab(0);
     }, [compteJointNom, tab]);
 
+    // Sync noms depuis la DB (compte joint) → compteJointConfig
+    useEffect(() => {
+        if (!compteJointData) return;
+        const { personnes, personneProprietaire: idx } = compteJointData;
+        if (!personnes || personnes.length < 2) return;
+        const fmt = v => v ? v.charAt(0).toUpperCase() + v.slice(1).toLowerCase() : v;
+        const p1 = fmt(personnes[idx] ?? '');
+        const p2 = fmt(personnes[1 - idx] ?? '');
+        setCompteJointConfig(prev => {
+            if (prev.personne1 === p1 && prev.personne2 === p2) return prev;
+            return { ...prev, personne1: p1, personne2: p2 };
+        });
+    }, [compteJointData]);
+
     // Colonnes dépenses/recettes avec valueOptions dynamiques (comptes + sousCategorie selon type)
     const depensesRecettesColumns = useMemo(
         () => DepensesRecettesColumns.map(col => {
@@ -516,7 +535,7 @@ function App() {
                     renderCell: (params) => {
                         if (params.row.compte !== compteJointNom) return null;
                         if (params.value == null) return '';
-                        return `${params.value} %`;
+                        return `${Math.round(params.value)} %`;
                     },
                 };
             }
@@ -785,6 +804,17 @@ function App() {
                                                 size="small"
                                                 value={compteJointConfig.personne1}
                                                 onChange={(e) => setCompteJointConfig(prev => ({ ...prev, personne1: e.target.value }))}
+                                                onBlur={async (e) => {
+                                                    const v = e.target.value.trim();
+                                                    if (!v || !compteJointData) return;
+                                                    const formatted = v.charAt(0).toUpperCase() + v.slice(1).toLowerCase();
+                                                    setCompteJointConfig(prev => ({ ...prev, personne1: formatted }));
+                                                    const idx = compteJointData.personneProprietaire ?? 0;
+                                                    const newPersonnes = [...(compteJointData.personnes?.length >= 2 ? compteJointData.personnes : ['', ''])];
+                                                    newPersonnes[idx] = formatted;
+                                                    const updated = await saveCompte({ ...compteJointData, personnes: newPersonnes }, false);
+                                                    setComptesRows(prev => prev.map(r => r.id === updated.id ? updated : r));
+                                                }}
                                                 sx={{ width: 160 }}
                                                 slotProps={{ inputLabel: { shrink: true } }}
                                             />
@@ -793,6 +823,17 @@ function App() {
                                                 size="small"
                                                 value={compteJointConfig.personne2}
                                                 onChange={(e) => setCompteJointConfig(prev => ({ ...prev, personne2: e.target.value }))}
+                                                onBlur={async (e) => {
+                                                    const v = e.target.value.trim();
+                                                    if (!v || !compteJointData) return;
+                                                    const formatted = v.charAt(0).toUpperCase() + v.slice(1).toLowerCase();
+                                                    setCompteJointConfig(prev => ({ ...prev, personne2: formatted }));
+                                                    const idx = compteJointData.personneProprietaire ?? 0;
+                                                    const newPersonnes = [...(compteJointData.personnes?.length >= 2 ? compteJointData.personnes : ['', ''])];
+                                                    newPersonnes[1 - idx] = formatted;
+                                                    const updated = await saveCompte({ ...compteJointData, personnes: newPersonnes }, false);
+                                                    setComptesRows(prev => prev.map(r => r.id === updated.id ? updated : r));
+                                                }}
                                                 sx={{ width: 160 }}
                                                 slotProps={{ inputLabel: { shrink: true } }}
                                             />

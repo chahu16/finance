@@ -50,7 +50,6 @@ export const columnTitleSx = {
     fontSize: '0.75rem',
     fontWeight: 700,
     color: '#888',
-    textTransform: 'uppercase',
     letterSpacing: '0.05em',
     mb: 0.75,
 };

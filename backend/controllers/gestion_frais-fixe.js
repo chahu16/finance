@@ -36,16 +36,28 @@ const calculerDateEffet = (dateFraisFixe) => {
     return dayjs().date(jourPrevu).startOf('day').add(12, 'hour').toDate();
 };
 
+const arraysEqual = (a, b) => {
+    if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
+    return a.every((v, i) => v === b[i]);
+};
+
 /**
- * Retourne le montant actif (le plus récent dont la dateEffet est passée)
+ * Retourne l'entrée active (montant, montantMensuel, parts) — la plus récente dont la dateEffet est passée.
  */
-const getMontantActif = (montants = []) => {
-    if (!montants.length) return 0;
+const getEntreeActive = (montants = []) => {
+    if (!montants.length) return { montant: 0, montantMensuel: null, parts: null };
+
     const now = new Date();
     const passes = montants
         .filter(m => m.dateEffet && new Date(m.dateEffet) <= now)
         .sort((a, b) => new Date(b.dateEffet) - new Date(a.dateEffet));
-    return passes.length ? passes[0].montant / 100 : montants[montants.length - 1].montant / 100;
+    const entree = passes.length ? passes[0] : montants[montants.length - 1];
+
+    return {
+        montant: entree.montant / 100,
+        montantMensuel: entree.montantMensuel != null ? entree.montantMensuel / 100 : null,
+        parts: entree.parts ?? null,
+    };
 };
 
 /**
@@ -53,6 +65,7 @@ const getMontantActif = (montants = []) => {
  */
 const formaterPourFront = (doc) => {
     const item = doc.toObject ? doc.toObject() : doc;
+    const entreeActive = getEntreeActive(item.montants);
     return {
         id: item._id.toString(),
         compte: item.compte?.nom ?? "",
@@ -60,12 +73,15 @@ const formaterPourFront = (doc) => {
         description: item.description,
         periodicite: item.periodicite,
         type: item.type,
-        montant: getMontantActif(item.montants),
+        montant: entreeActive.montant,
         montants: item.montants.map(m => ({
             montant: m.montant / 100,
+            montantMensuel: m.montantMensuel != null ? m.montantMensuel / 100 : null,
+            parts: m.parts ?? null,
             dateEffet: m.dateEffet,
         })),
-        parts: item.parts ?? [50, 50],
+        montantMensuel: entreeActive.montantMensuel,
+        parts: entreeActive.parts,
         archive: !!item.archive,
         categorie: item.sousCategorie?.groupe ?? '',
         sousCategorie: item.sousCategorie?._id?.toString() ?? '',
@@ -90,21 +106,26 @@ exports.listeFraisFixes = async (req, res) => {
 
 exports.ajoutFraisFixes = async (req, res) => {
     try {
-        const { compte: nomCompte, description, dateFraisFixe, periodicite, type, montant, parts, sousCategorie } = req.body;
+        const { compte: nomCompte, description, dateFraisFixe, periodicite, type, montant, montantMensuel, parts, sousCategorie } = req.body;
 
         const compteDoc = await compte.findOne({ nom: nomCompte });
         if (!compteDoc) return res.status(400).json({ message: `Compte introuvable : "${nomCompte}"` });
 
         const dateEffet = calculerDateEffet(dateFraisFixe);
 
+        const partsNormaux = Array.isArray(parts) ? parts : [50, 50];
         const doc = await new fraisFixe({
             compte: compteDoc._id,
             dateFraisFixe,
             description,
             periodicite: periodicite || 'mensuel',
             type,
-            montants: [{ montant: Math.round(montant * 100), dateEffet }],
-            parts: Array.isArray(parts) ? parts : [50, 50],
+            montants: [{
+                montant: Math.round(montant * 100),
+                montantMensuel: montantMensuel != null ? Math.round(montantMensuel * 100) : null,
+                parts: partsNormaux,
+                dateEffet,
+            }],
             archive: false,
             sousCategorie: sousCategorie || null,
         }).save();
@@ -119,7 +140,7 @@ exports.ajoutFraisFixes = async (req, res) => {
 
 exports.modificationFraisFixes = async (req, res) => {
     try {
-        const { id, compte: nomCompte, dateFraisFixe, description, periodicite, type, montant, parts, sousCategorie } = req.body;
+        const { id, compte: nomCompte, dateFraisFixe, description, periodicite, type, montant, montantMensuel, parts, sousCategorie } = req.body;
 
         const compteDoc = await compte.findOne({ nom: nomCompte });
         if (!compteDoc) return res.status(400).json({ message: `Compte introuvable : "${nomCompte}"` });
@@ -128,10 +149,12 @@ exports.modificationFraisFixes = async (req, res) => {
         const docActuel = await fraisFixe.findById(id);
         if (!docActuel) return res.status(404).json({ message: 'Frais fixe introuvable' });
 
-        const montantActuel = getMontantActif(docActuel.montants);
+        const entreeActive = getEntreeActive(docActuel.montants);
         const montantNouveauCentimes = Math.round(montant * 100);
+        const partsNouveaux = Array.isArray(parts) ? parts : [50, 50];
 
-        const montantAChange = montantNouveauCentimes !== Math.round(montantActuel * 100);
+        const montantAChange = montantNouveauCentimes !== Math.round(entreeActive.montant * 100);
+        const partsOntChange = !arraysEqual(partsNouveaux, entreeActive.parts);
         const dateAChange = dayjs(dateFraisFixe).toISOString() !== dayjs(docActuel.dateFraisFixe).toISOString();
 
         // Calcul de la dateEffet selon ce qui a changé
@@ -139,7 +162,7 @@ exports.modificationFraisFixes = async (req, res) => {
             ? dayjs(dateFraisFixe).startOf('day').add(12, 'hour').toDate()
             : calculerDateEffet(docActuel.dateFraisFixe);
 
-        // On push dans montants uniquement si montant ou date a changé
+        // On push dans montants uniquement si montant, parts ou date a changé
         const updateQuery = {
             $set: {
                 compte: compteDoc._id,
@@ -147,15 +170,16 @@ exports.modificationFraisFixes = async (req, res) => {
                 description,
                 periodicite,
                 type,
-                parts: Array.isArray(parts) ? parts : [50, 50],
                 sousCategorie: sousCategorie || null,
             }
         };
 
-        if (montantAChange || dateAChange) {
+        if (montantAChange || partsOntChange || dateAChange) {
             updateQuery.$push = {
                 montants: {
                     montant: montantNouveauCentimes,
+                    montantMensuel: montantMensuel != null ? Math.round(montantMensuel * 100) : null,
+                    parts: partsNouveaux,
                     dateEffet,
                 }
             };
@@ -245,17 +269,24 @@ exports.ajoutFraisFixesBulk = async (req, res) => {
             } else {
                 const dateParsee = parseDate(data.dateFraisFixe)?.toDate() || null;
                 const dateEffet = calculerDateEffet(data.dateFraisFixe);
-                const parts = data.parts
+                const partsBulk = data.parts
                     ? String(data.parts).split(';').map(p => parseFloat(p.trim())).filter(p => !isNaN(p))
                     : [50, 50];
+                const partsBulkNormaux = partsBulk.length >= 2 ? partsBulk : [50, 50];
+                const montantMensuelBulk = data.montantMensuel != null ? parseFloat(String(data.montantMensuel).replace(',', '.')) : null;
+                const montantMensuelCentimes = montantMensuelBulk != null && !isNaN(montantMensuelBulk) ? Math.round(montantMensuelBulk * 100) : null;
                 lignesValidees.push({
                     compte: mappingComptes[data.compte],
                     description: String(data.description).trim(),
                     dateFraisFixe: dateParsee,
                     periodicite: data.periodicite || 'mensuel',
                     type: String(data.type).toLowerCase(),
-                    montants: [{ montant: Math.round(montant * 100), dateEffet }],
-                    parts: parts.length >= 2 ? parts : [50, 50],
+                    montants: [{
+                        montant: Math.round(montant * 100),
+                        montantMensuel: montantMensuelCentimes,
+                        parts: partsBulkNormaux,
+                        dateEffet,
+                    }],
                     archive: false,
                 });
             }

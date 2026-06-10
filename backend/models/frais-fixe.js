@@ -13,9 +13,10 @@ const comptesFraisFixe = mongoose.Schema({
     type: { type: String, required: true },
     montants: [{
         montant: { type: Number, default: 0 },
+        montantMensuel: { type: Number, default: null },
+        parts: { type: [Number], default: [] },
         dateEffet: { type: Date, default: null },
     }],
-    parts: { type: [Number], default: [50, 50] },
     archive: { type: Boolean, default: false },
     sousCategorie: { type: mongoose.Schema.Types.ObjectId, ref: 'categories', default: null },
 });

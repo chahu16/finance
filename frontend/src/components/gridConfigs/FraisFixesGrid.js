@@ -1,4 +1,4 @@
-import { formatEuro } from '../config/Config.js';
+import { formatEuro, formatPourcent } from '../config/Config.js';
 
 export const initialSort = [
     { field: 'compte', sort: 'asc' },
@@ -95,6 +95,7 @@ export const FraisFixesColumns = [
         width: 80,
         editable: true,
         align: 'center',
+        valueFormatter: formatPourcent,
         // renderCell et isCellEditable injectés dynamiquement depuis App.js
     },
 ];

@@ -44,6 +44,8 @@ const fromApi = (doc) => {
     };
 };
 
+const DIVISEUR_MENSUEL = { Mensuel: 1, Trimestriel: 3, Semestriel: 6, Annuel: 12 };
+
 // Mapping Frontend → Backend
 // jourPrelevement → chaîne ISO YYYY-MM-DD (pas d'objet Date pour éviter la conversion UTC)
 const toApi = (row) => {
@@ -52,6 +54,9 @@ const toApi = (row) => {
         ? `2000-01-${String(jourPrel).padStart(2, '0')}`
         : `2000-${String(jourPrel).padStart(2, '0')}-01`;
     const pct = row.pourcentageMoi != null && row.pourcentageMoi !== '' ? parseFloat(row.pourcentageMoi) : null;
+    const montant = parseFloat(row.montant) || 0;
+    const diviseur = DIVISEUR_MENSUEL[row.periodicite] ?? 1;
+    const facteurPct = pct != null ? pct / 100 : 1;
     return {
         id: row.id,
         compte: row.compte,
@@ -60,7 +65,8 @@ const toApi = (row) => {
         type: row.type,
         montant: row.montant,
         periodicite: row.periodicite,
-        parts: pct != null && !isNaN(pct) ? [pct, 100 - pct] : [50, 50],
+        montantMensuel: (montant / diviseur) * facteurPct,
+        parts: pct != null && !isNaN(pct) ? [pct, 100 - pct] : null,
         sousCategorie: row.sousCategorie || null,
     };
 };
