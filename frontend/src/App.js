@@ -43,6 +43,65 @@ import { statCardsContainerSx } from './styles/StatCardStyles.js';
 import { addButtonStyle } from './styles/GridStyles.js';
 import { parametrageFormSx, formSectionTitleSx, formRowSx, computedValueSx } from './styles/CompteJointStyles.js';
 
+// ─── Helpers module-level ──────────────────────────────────────────────────────
+
+/**
+ * Construit la config dynamique d'une colonne sousCategorie :
+ * valueOptions filtrées par type (Recette/Dépense) et renderEditCell injecté.
+ * @param {function} getIsRecette(row) → true si la ligne est une recette
+ */
+const makeSousCategorieColumn = (col, categoriesRows, getIsRecette) => ({
+    ...col,
+    valueOptions: (params) => {
+        const isRecette = getIsRecette(params.row);
+        return categoriesRows
+            .filter(c => c.type === (isRecette ? 'Recette' : 'Dépense'))
+            .map(c => ({ value: c.id, label: c.nom }));
+    },
+    renderEditCell: (params) => (
+        <GridEditSousCategorieCell
+            {...params}
+            categoriesRows={categoriesRows}
+            transactionType={getIsRecette(params.row) ? 'Recette' : 'Dépense'}
+        />
+    ),
+});
+
+/**
+ * Construit l'unique action extra-row [Archiver | Désarchiver] pour un DataGrid.
+ * @param {boolean} showArchived - true si l'onglet affiche les archivés (→ action = désarchiver)
+ * @param {function} opts.toggleFn(id, archive) - appel API
+ * @param {string}   opts.entityLabel - ex. 'Compte', 'Frais fixe'
+ * @param {function} [opts.preCheck(id)] - appelé avant désarchivage ; retourne un message d'erreur ou null
+ */
+const makeArchiveAction = (showArchived, { toggleFn, entityLabel, preCheck } = {}) => [{
+    icon: showArchived ? <UnarchiveIcon /> : <ArchiveIcon />,
+    label: showArchived ? 'Désarchiver' : 'Archiver',
+    onClick: async (id, setRows, showSnackbar) => {
+        if (showArchived && preCheck) {
+            const errMsg = preCheck(id);
+            if (errMsg) { showSnackbar(errMsg, 'error'); return; }
+        }
+        try {
+            await toggleFn(id, !showArchived);
+            setRows(prev => prev.map(r => r.id === id ? { ...r, archived: !showArchived } : r));
+            showSnackbar(
+                `${entityLabel} ${showArchived ? 'désarchivé' : 'archivé'}`,
+                showArchived ? 'success' : 'info'
+            );
+        } catch (err) {
+            showSnackbar(err.message || `Erreur ${showArchived ? 'désarchivage' : 'archivage'}`, 'error');
+        }
+    },
+}];
+
+// Bouton toolbar pour basculer l'affichage des lignes archivées.
+const ToggleArchivedButton = ({ shown, onToggle, label }) => (
+    <Button variant="outlined" size="small" onClick={onToggle} sx={addButtonStyle}>
+        {shown ? `Masquer les ${label} archivés` : `Afficher les ${label} archivés`}
+    </Button>
+);
+
 const PARAMETRAGE_SECTIONS = [
     'Comptes',
     'Frais fixes',
@@ -58,10 +117,6 @@ function App() {
     const [virementInternesRows, setVirementInternesRows] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
     const [loadError, setLoadError] = useState(false);
-
-    const onSaveDepenseRecette = useCallback(async (row, isNew) => {
-        return saveDepenseRecette(row, isNew);
-    }, []);
 
     const onDeleteConfirmDepenseRecette = useCallback(async (row) => {
         await deleteDepenseRecette(row);
@@ -103,10 +158,6 @@ function App() {
             .finally(() => setIsLoading(false));
     }, []);
 
-    const onSaveCompte = useCallback(async (row, isNew) => {
-        return saveCompte(row, isNew);
-    }, []);
-
     const onDeleteConfirmCompte = useCallback(async (row) => {
         const action = await deleteCompte(row);
         return { action };
@@ -115,17 +166,9 @@ function App() {
     const [fraisFixesRows, setFraisFixesRows] = useState([]);
     const [categoriesRows, setCategoriesRows] = useState([]);
 
-    const onSaveFraisFixe = useCallback(async (row, isNew) => {
-        return saveFraisFixe(row, isNew);
-    }, []);
-
     const onDeleteConfirmFraisFixe = useCallback(async (row) => {
         await deleteFraisFixe(row);
         return 'delete';
-    }, []);
-
-    const onSaveCategorie = useCallback(async (row, isNew) => {
-        return saveCategorie(row, isNew);
     }, []);
 
     const onDeleteConfirmCategorie = useCallback(async (row) => {
@@ -298,45 +341,18 @@ function App() {
         return { action: 'delete' };
     }, [rows]);
 
-    const comptesExtraActions = useMemo(() => showArchivedComptes
-        ? [{
-            icon: <UnarchiveIcon />,
-            label: 'Désarchiver',
-            onClick: async (id, setRows, showSnackbar) => {
-                const targetRow = comptesRows.find(r => r.id === id);
-                if (targetRow?.compteJoint) {
-                    const hasActiveJoint = comptesRows.some(r => r.compteJoint && !r.archived && r.id !== id);
-                    if (hasActiveJoint) {
-                        showSnackbar(
-                            'Impossible : un compte joint est déjà actif. Archivez-le d\'abord.',
-                            'error'
-                        );
-                        return;
-                    }
-                }
-                try {
-                    await toggleArchiveCompte(id, false);
-                    setRows(prev => prev.map(r => r.id === id ? { ...r, archived: false } : r));
-                    showSnackbar('Compte désarchivé', 'success');
-                } catch (err) {
-                    showSnackbar(err.message || 'Erreur désarchivage', 'error');
-                }
-            },
-        }]
-        : [{
-            icon: <ArchiveIcon />,
-            label: 'Archiver',
-            onClick: async (id, setRows, showSnackbar) => {
-                try {
-                    await toggleArchiveCompte(id, true);
-                    setRows(prev => prev.map(r => r.id === id ? { ...r, archived: true } : r));
-                    showSnackbar('Compte archivé', 'info');
-                } catch (err) {
-                    showSnackbar(err.message || 'Erreur archivage', 'error');
-                }
-            },
-        }],
-    [showArchivedComptes, comptesRows]);
+    const comptesExtraActions = useMemo(() => makeArchiveAction(showArchivedComptes, {
+        toggleFn: toggleArchiveCompte,
+        entityLabel: 'Compte',
+        // Un seul compte joint actif est autorisé — bloquer le désarchivage si un autre existe déjà
+        preCheck: (id) => {
+            const row = comptesRows.find(r => r.id === id);
+            if (row?.compteJoint && comptesRows.some(r => r.compteJoint && !r.archived && r.id !== id)) {
+                return "Impossible : un compte joint est déjà actif. Archivez-le d'abord.";
+            }
+            return null;
+        },
+    }), [showArchivedComptes, comptesRows]);
 
     // Noms exclus du datagrid dépenses/recettes (archivés ou compte joint, par nom)
     // Partagé entre activeComptesOptions et depensesRowFilter pour garantir leur cohérence.
@@ -384,30 +400,13 @@ function App() {
     const depensesRecettesColumns = useMemo(
         () => DepensesRecettesColumns.map(col => {
             if (col.field === 'compte') return { ...col, valueOptions: activeComptesOptions };
-            if (col.field === 'sousCategorie') return {
-                ...col,
-                valueOptions: (params) => {
-                    const isRecette = (params.row?.recettes ?? 0) > 0;
-                    return categoriesRows
-                        .filter(c => c.type === (isRecette ? 'Recette' : 'Dépense'))
-                        .map(c => ({ value: c.id, label: c.nom }));
-                },
-                renderEditCell: (params) => (
-                    <GridEditSousCategorieCell
-                        {...params}
-                        categoriesRows={categoriesRows}
-                        transactionType={(params.row?.recettes ?? 0) > 0 ? 'Recette' : 'Dépense'}
-                    />
-                ),
-            };
+            if (col.field === 'sousCategorie') return makeSousCategorieColumn(
+                col, categoriesRows, (row) => (row?.recettes ?? 0) > 0
+            );
             return col;
         }),
         [activeComptesOptions, categoriesRows]
     );
-
-    const depensesOnFieldChange = useCallback((args) => {
-        onFieldChange(args);
-    }, []);
 
     // Tous les comptes non-archivés, non-joints avec soldeInitial → récapitulatif global
     const comptesRecapData = useMemo(
@@ -455,29 +454,12 @@ function App() {
         return CompteJointColumns.map(col => {
             if (col.field === 'pourcentageMoi')  return { ...col, headerName: `Part ${p1} (%)` };
             if (col.field === 'pourcentageAutre') return { ...col, headerName: `Part ${p2} (%)` };
-            if (col.field === 'sousCategorie') return {
-                ...col,
-                valueOptions: (params) => {
-                    const isRecette = (params.row?.recettes ?? 0) > 0;
-                    return categoriesRows
-                        .filter(c => c.type === (isRecette ? 'Recette' : 'Dépense'))
-                        .map(c => ({ value: c.id, label: c.nom }));
-                },
-                renderEditCell: (params) => (
-                    <GridEditSousCategorieCell
-                        {...params}
-                        categoriesRows={categoriesRows}
-                        transactionType={(params.row?.recettes ?? 0) > 0 ? 'Recette' : 'Dépense'}
-                    />
-                ),
-            };
+            if (col.field === 'sousCategorie') return makeSousCategorieColumn(
+                col, categoriesRows, (row) => (row?.recettes ?? 0) > 0
+            );
             return col;
         });
     }, [compteJointConfig.personne1, compteJointConfig.personne2, categoriesRows]);
-
-    const compteJointOnFieldChange = useCallback((args) => {
-        compteJointOnFieldChangeBase(args);
-    }, []);
 
     // Valeurs par défaut pour les nouvelles lignes du compte joint
     const compteJointExtraRowDefaults = useMemo(() => ({
@@ -511,24 +493,9 @@ function App() {
             if (col.field === 'compte') {
                 return { ...col, valueOptions: allNonArchivedComptesOptions };
             }
-            if (col.field === 'sousCategorie') {
-                return {
-                    ...col,
-                    valueOptions: (params) => {
-                        const isRecette = params.row?.type === 'Recette';
-                        return categoriesRows
-                            .filter(c => c.type === (isRecette ? 'Recette' : 'Dépense'))
-                            .map(c => ({ value: c.id, label: c.nom }));
-                    },
-                    renderEditCell: (params) => (
-                        <GridEditSousCategorieCell
-                            {...params}
-                            categoriesRows={categoriesRows}
-                            transactionType={params.row?.type === 'Recette' ? 'Recette' : 'Dépense'}
-                        />
-                    ),
-                };
-            }
+            if (col.field === 'sousCategorie') return makeSousCategorieColumn(
+                col, categoriesRows, (row) => row?.type === 'Recette'
+            );
             if (col.field === 'pourcentageMoi') {
                 return {
                     ...col,
@@ -573,34 +540,10 @@ function App() {
     }, [compteJointNom]);
 
     // Actions archive / désarchive pour frais fixes
-    const fraisFixesExtraActions = useMemo(() => showArchivedFraisFixes
-        ? [{
-            icon: <UnarchiveIcon />,
-            label: 'Désarchiver',
-            onClick: async (id, setRows, showSnackbar) => {
-                try {
-                    await toggleArchiveFraisFixe(id, false);
-                    setRows(prev => prev.map(r => r.id === id ? { ...r, archived: false } : r));
-                    showSnackbar('Frais fixe désarchivé', 'success');
-                } catch (err) {
-                    showSnackbar(err.message || 'Erreur désarchivage', 'error');
-                }
-            },
-        }]
-        : [{
-            icon: <ArchiveIcon />,
-            label: 'Archiver',
-            onClick: async (id, setRows, showSnackbar) => {
-                try {
-                    await toggleArchiveFraisFixe(id, true);
-                    setRows(prev => prev.map(r => r.id === id ? { ...r, archived: true } : r));
-                    showSnackbar('Frais fixe archivé', 'info');
-                } catch (err) {
-                    showSnackbar(err.message || 'Erreur archivage', 'error');
-                }
-            },
-        }],
-    [showArchivedFraisFixes]);
+    const fraisFixesExtraActions = useMemo(() => makeArchiveAction(showArchivedFraisFixes, {
+        toggleFn: toggleArchiveFraisFixe,
+        entityLabel: 'Frais fixe',
+    }), [showArchivedFraisFixes]);
 
     // Rows pré-filtrées par compte pour éviter les filter() inline dans le JSX
     // (chaque filter() crée une nouvelle référence → re-render inutile des StatCards)
@@ -701,9 +644,9 @@ function App() {
                         validateRow={validateRow}
                         messages={snackbarMessages}
                         initialSort={initialSort}
-                        onFieldChange={depensesOnFieldChange}
+                        onFieldChange={onFieldChange}
                         onRowsChange={setRows}
-                        onSave={onSaveDepenseRecette}
+                        onSave={saveDepenseRecette}
                         onDeleteConfirm={onDeleteConfirmDepenseRecette}
                         rowFilter={depensesRowFilter}
                         extraRowDefaults={{ categorie: '', sousCategorie: '' }}
@@ -727,9 +670,9 @@ function App() {
                             validateRow={validateCompteJointRow}
                             messages={compteJointMessages}
                             initialSort={compteJointInitialSort}
-                            onFieldChange={compteJointOnFieldChange}
+                            onFieldChange={compteJointOnFieldChangeBase}
                             onRowsChange={setRows}
-                            onSave={onSaveDepenseRecette}
+                            onSave={saveDepenseRecette}
                             onDeleteConfirm={onDeleteConfirmDepenseRecette}
                             rowFilter={(row) => row.compte === compteJointNom}
                             extraRowDefaults={compteJointExtraRowDefaults}
@@ -777,21 +720,18 @@ function App() {
                                         initialSort={fraisFixesInitialSort}
                                         extraRowDefaults={fraisFixesExtraRowDefaults}
                                         onFieldChange={fraisFixesOnFieldChangeEnriched}
-                                        onSave={onSaveFraisFixe}
+                                        onSave={saveFraisFixe}
                                         onDeleteConfirm={onDeleteConfirmFraisFixe}
                                         rowDisplayField="description"
                                         extraRowActions={fraisFixesExtraActions}
                                         rowFilter={showArchivedFraisFixes ? (row) => row.archived : (row) => !row.archived}
                                         height={400}
                                         toolbarSlotEnd={
-                                            <Button
-                                                variant="outlined"
-                                                size="small"
-                                                onClick={() => setShowArchivedFraisFixes(prev => !prev)}
-                                                sx={addButtonStyle}
-                                            >
-                                                {showArchivedFraisFixes ? 'Masquer les frais fixes archivés' : 'Afficher les frais fixes archivés'}
-                                            </Button>
+                                            <ToggleArchivedButton
+                                                shown={showArchivedFraisFixes}
+                                                onToggle={() => setShowArchivedFraisFixes(prev => !prev)}
+                                                label="frais fixes"
+                                            />
                                         }
                                     />
                                 )}
@@ -905,7 +845,7 @@ function App() {
                                     <CategoriesManager
                                         categoriesRows={categoriesRows}
                                         onRowsChange={setCategoriesRows}
-                                        onSave={onSaveCategorie}
+                                        onSave={saveCategorie}
                                         onDeleteConfirm={onDeleteConfirmCategorie}
                                     />
                                 )}
@@ -941,18 +881,15 @@ function App() {
                                         extraRowActions={comptesExtraActions}
                                         rowFilter={showArchivedComptes ? (row) => row.archived : (row) => !row.archived}
                                         resolveDelete={resolveCompteDelete}
-                                        onSave={onSaveCompte}
+                                        onSave={saveCompte}
                                         onDeleteConfirm={onDeleteConfirmCompte}
                                         height={400}
                                         toolbarSlotEnd={
-                                            <Button
-                                                variant="outlined"
-                                                size="small"
-                                                onClick={() => setShowArchivedComptes(prev => !prev)}
-                                                sx={addButtonStyle}
-                                            >
-                                                {showArchivedComptes ? 'Masquer les comptes archivés' : 'Afficher les comptes archivés'}
-                                            </Button>
+                                            <ToggleArchivedButton
+                                                shown={showArchivedComptes}
+                                                onToggle={() => setShowArchivedComptes(prev => !prev)}
+                                                label="comptes"
+                                            />
                                         }
                                     />
                                 )}

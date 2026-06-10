@@ -27,7 +27,7 @@ exports.listeNomsComptes = async (req, res, next) => {
         const nomsDesComptes = comptes.map(c => c.nom);
         res.status(200).json(nomsDesComptes);
     } catch (error) {
-        res.status(400).json({ error });
+        res.status(400).json({ error: error.message });
     }
 };
 
@@ -36,7 +36,7 @@ exports.listeComptes = async (req, res, next) => {
         const comptes = await compte.find().sort({ nom: 1 });
         res.status(200).json(comptes.map(formaterPourFront));
     } catch (error) {
-        res.status(400).json({ error });
+        res.status(400).json({ error: error.message });
     }
 };
 

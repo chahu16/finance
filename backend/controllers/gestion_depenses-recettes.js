@@ -90,6 +90,29 @@ const trierParDateDesc = (a, b) => {
     return new Date(dateB) - new Date(dateA);
 };
 
+/**
+ * Résout les deux comptes d'un virement interne à partir de leurs noms.
+ * Envoie la réponse d'erreur directement via res si un compte est introuvable ou si les deux sont identiques.
+ * Retourne null si une erreur a été renvoyée, { sourceDoc, destDoc } sinon.
+ */
+const resolveComptesVirement = async (res, compteSource, compteDestination) => {
+    const sourceDoc = await compte.findOne({ nom: compteSource });
+    const destDoc = await compte.findOne({ nom: compteDestination });
+    if (!sourceDoc) {
+        res.status(400).json({ message: `Compte source introuvable : "${compteSource}"` });
+        return null;
+    }
+    if (!destDoc) {
+        res.status(400).json({ message: `Compte destination introuvable : "${compteDestination}"` });
+        return null;
+    }
+    if (sourceDoc._id.equals(destDoc._id)) {
+        res.status(400).json({ message: "Le compte source et le compte destination doivent être différents." });
+        return null;
+    }
+    return { sourceDoc, destDoc };
+};
+
 // --- EXPORTS ---
 
 exports.dataGridDepensesRecettes = async (req, res) => {
@@ -108,7 +131,7 @@ exports.dataGridDepensesRecettes = async (req, res) => {
         res.status(200).json(formattedData);
     } catch (error) {
         console.error("Erreur tri Back:", error);
-        res.status(400).json({ error });
+        res.status(400).json({ error: error.message });
     }
 };
 
@@ -278,7 +301,7 @@ exports.dataGridCompteJoint = async (req, res) => {
 
         res.status(200).json(formattedData);
     } catch (error) {
-        res.status(400).json({ error });
+        res.status(400).json({ error: error.message });
     }
 };
 
@@ -322,12 +345,9 @@ exports.ajoutVirement = async (req, res) => {
     try {
         const { compteSource, compteDestination, montant, dateVirement } = req.body;
 
-        const compteSourceDoc = await compte.findOne({ nom: compteSource });
-        const compteDestDoc = await compte.findOne({ nom: compteDestination });
-
-        if (!compteSourceDoc) return res.status(400).json({ message: `Compte source introuvable : "${compteSource}"` });
-        if (!compteDestDoc) return res.status(400).json({ message: `Compte destination introuvable : "${compteDestination}"` });
-        if (compteSourceDoc._id.equals(compteDestDoc._id)) return res.status(400).json({ message: "Le compte source et le compte destination doivent être différents." });
+        const comptes = await resolveComptesVirement(res, compteSource, compteDestination);
+        if (!comptes) return;
+        const { sourceDoc: compteSourceDoc, destDoc: compteDestDoc } = comptes;
 
         const doc = await new depensesRecettes({
             compte: compteSourceDoc._id,
@@ -353,12 +373,9 @@ exports.modificationVirement = async (req, res) => {
     try {
         const { id, compteSource, compteDestination, montant, dateVirement } = req.body;
 
-        const compteSourceDoc = await compte.findOne({ nom: compteSource });
-        const compteDestDoc = await compte.findOne({ nom: compteDestination });
-
-        if (!compteSourceDoc) return res.status(400).json({ message: `Compte source introuvable : "${compteSource}"` });
-        if (!compteDestDoc) return res.status(400).json({ message: `Compte destination introuvable : "${compteDestination}"` });
-        if (compteSourceDoc._id.equals(compteDestDoc._id)) return res.status(400).json({ message: "Le compte source et le compte destination doivent être différents." });
+        const comptes = await resolveComptesVirement(res, compteSource, compteDestination);
+        if (!comptes) return;
+        const { sourceDoc: compteSourceDoc, destDoc: compteDestDoc } = comptes;
 
         const doc = await depensesRecettes.findByIdAndUpdate(
             id,

@@ -5,8 +5,9 @@ export const validateRow = (row) => {
         errors.nomCompte = 'Le nom du compte est obligatoire';
     }
 
-    const seuilOrange = parseFloat(row.seuilOrange) ?? 0;
-    if (seuilOrange < 0 || seuilOrange > 100) {
+    // parseFloat retourne toujours un Number ou NaN, jamais null — le ?? 0 serait sans effet
+    const seuilOrange = parseFloat(row.seuilOrange);
+    if (!isNaN(seuilOrange) && (seuilOrange < 0 || seuilOrange > 100)) {
         errors.seuilOrange = 'Le seuil orange doit être compris entre 0 et 100';
     }
 
