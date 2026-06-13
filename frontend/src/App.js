@@ -9,6 +9,10 @@ import Alert from '@mui/material/Alert';
 import Typography from '@mui/material/Typography';
 import Tabs from '@mui/material/Tabs';
 import Tab from '@mui/material/Tab';
+import Select from '@mui/material/Select';
+import MenuItem from '@mui/material/MenuItem';
+import FormControl from '@mui/material/FormControl';
+import InputLabel from '@mui/material/InputLabel';
 import Accordion from '@mui/material/Accordion';
 import AccordionSummary from '@mui/material/AccordionSummary';
 import AccordionDetails from '@mui/material/AccordionDetails';
@@ -108,6 +112,7 @@ const PARAMETRAGE_SECTIONS = [
     'Virements internes',
     'Catégories',
     'Paramétrage',
+    'Règle 50-30-20',
 ];
 
 function App() {
@@ -186,6 +191,18 @@ function App() {
         return { personne1: '', personne2: '', pourcentageDefaut: 50, pourcentageSoldeInitialMoi: null };
     });
     const [soldeInitialPctWarning, setSoldeInitialPctWarning] = useState(false);
+
+    const [budget503020Config, setBudget503020Config] = useState(() => {
+        try {
+            const saved = localStorage.getItem('budget503020Config');
+            if (saved) return JSON.parse(saved);
+        } catch {}
+        return { periode: '12mois' };
+    });
+
+    useEffect(() => {
+        localStorage.setItem('budget503020Config', JSON.stringify(budget503020Config));
+    }, [budget503020Config]);
 
     useEffect(() => {
         localStorage.setItem('compteJointConfig', JSON.stringify(compteJointConfig));
@@ -593,6 +610,9 @@ function App() {
                             virementInternesRows={virementInternesRows}
                             compteJointData={compteJointData}
                             compteJointConfig={compteJointConfig}
+                            categoriesRows={categoriesRows}
+                            budget503020Config={budget503020Config}
+                            fraisFixesRows={fraisFixesRows}
                         />
                     </Box>
                     {comptesActifsData.map(compteData => (
@@ -892,6 +912,27 @@ function App() {
                                             />
                                         }
                                     />
+                                )}
+                                {label === 'Règle 50-30-20' && (
+                                    <Box sx={parametrageFormSx}>
+                                        <Typography sx={formSectionTitleSx}>Période d'analyse</Typography>
+                                        <Box sx={formRowSx}>
+                                            <FormControl size="small" sx={{ width: 220 }}>
+                                                <InputLabel shrink>Période</InputLabel>
+                                                <Select
+                                                    value={budget503020Config.periode}
+                                                    label="Période"
+                                                    onChange={e => setBudget503020Config(prev => ({ ...prev, periode: e.target.value }))}
+                                                    notched
+                                                >
+                                                    <MenuItem value="mois">Mois en cours</MenuItem>
+                                                    <MenuItem value="3mois">3 derniers mois</MenuItem>
+                                                    <MenuItem value="6mois">6 derniers mois</MenuItem>
+                                                    <MenuItem value="12mois">12 derniers mois</MenuItem>
+                                                </Select>
+                                            </FormControl>
+                                        </Box>
+                                    </Box>
                                 )}
                             </AccordionDetails>
                         </Accordion>

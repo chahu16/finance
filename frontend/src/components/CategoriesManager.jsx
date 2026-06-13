@@ -13,11 +13,21 @@ import DialogTitle from '@mui/material/DialogTitle';
 import DialogContent from '@mui/material/DialogContent';
 import DialogContentText from '@mui/material/DialogContentText';
 import DialogActions from '@mui/material/DialogActions';
+import Select from '@mui/material/Select';
+import MenuItem from '@mui/material/MenuItem';
+import FormControl from '@mui/material/FormControl';
 import AddIcon from '@mui/icons-material/Add';
 import EditIcon from '@mui/icons-material/Edit';
 
+const BUCKET_OPTIONS = [
+    { value: 'besoins', label: 'Besoins' },
+    { value: 'envies', label: 'Envies' },
+    { value: null, label: '—' },
+];
+const AUTO_GROUPES = ['Revenues', 'Épargne'];
+
 // ─── GroupCard ─────────────────────────────────────────────────────────────────
-function GroupCard({ groupe, type, subcategories, existingGroups, onAddSub, onDeleteRequest, onRenameSub, onRenameGroup, locked }) {
+function GroupCard({ groupe, type, subcategories, existingGroups, onAddSub, onDeleteRequest, onRenameSub, onRenameGroup, onChangeBucket, locked }) {
     // ── Ajout sous-catégorie ────────────────────────────────────────────────────
     const [adding, setAdding] = React.useState(false);
     const [newName, setNewName] = React.useState('');
@@ -120,6 +130,28 @@ function GroupCard({ groupe, type, subcategories, existingGroups, onAddSub, onDe
                             sx={{ ml: 0.5, fontSize: '0.8rem', color: 'text.disabled', opacity: 0, transition: 'opacity .15s' }}
                         />
                     </Box>
+                )}
+
+                {/* ── Bucket 50/30/20 ── */}
+                {!AUTO_GROUPES.includes(groupe) && type === 'Dépense' && (
+                    <FormControl size="small" sx={{ mb: 1 }}>
+                        <Select
+                            value={subcategories[0]?.bucket ?? null}
+                            onChange={e => onChangeBucket(groupe, type, e.target.value === '' ? null : e.target.value)}
+                            displayEmpty
+                            sx={{ fontSize: '0.75rem', height: 24, '& .MuiSelect-select': { py: 0, px: 1 } }}
+                            renderValue={v => {
+                                const opt = BUCKET_OPTIONS.find(o => o.value === v);
+                                return <Typography sx={{ fontSize: '0.75rem', color: v ? 'text.primary' : 'text.disabled' }}>{opt?.label ?? '—'}</Typography>;
+                            }}
+                        >
+                            {BUCKET_OPTIONS.map(opt => (
+                                <MenuItem key={String(opt.value)} value={opt.value ?? ''} sx={{ fontSize: '0.8rem' }}>
+                                    {opt.label}
+                                </MenuItem>
+                            ))}
+                        </Select>
+                    </FormControl>
                 )}
 
                 {/* ── Chips sous-catégories ── */}
@@ -253,7 +285,7 @@ function NewGroupForm({ type, existingGroups, onAdd, onCancel }) {
 }
 
 // ─── TypeSection ───────────────────────────────────────────────────────────────
-function TypeSection({ type, categoriesRows, onAddSub, onDeleteRequest, onRenameSub, onRenameGroup }) {
+function TypeSection({ type, categoriesRows, onAddSub, onDeleteRequest, onRenameSub, onRenameGroup, onChangeBucket }) {
     const [addingGroup, setAddingGroup] = React.useState(false);
 
     const groupEntries = React.useMemo(() => {
@@ -288,6 +320,7 @@ function TypeSection({ type, categoriesRows, onAddSub, onDeleteRequest, onRename
                         onDeleteRequest={onDeleteRequest}
                         onRenameSub={onRenameSub}
                         onRenameGroup={onRenameGroup}
+                        onChangeBucket={onChangeBucket}
                         locked={groupe === 'Revenues'}
                     />
                 ))}
@@ -336,6 +369,20 @@ export function CategoriesManager({ categoriesRows, onRowsChange, onSave, onDele
         }
     };
 
+    const handleChangeBucket = async (groupe, type, bucket) => {
+        const subsToUpdate = categoriesRows.filter(c => c.groupe === groupe && c.type === type);
+        try {
+            const saved = await Promise.all(
+                subsToUpdate.map(sub => onSave({ ...sub, bucket }, false))
+            );
+            const savedMap = Object.fromEntries(saved.map(s => [s.id, s]));
+            onRowsChange(prev => prev.map(r => savedMap[r.id] ?? r));
+            showSnackbar(`Bucket mis à jour pour "${groupe}"`);
+        } catch (err) {
+            showSnackbar(err.message || 'Erreur lors de la mise à jour', 'error');
+        }
+    };
+
     const handleRenameGroup = async (oldGroupe, newGroupe, type) => {
         const subsToUpdate = categoriesRows.filter(c => c.groupe === oldGroupe && c.type === type);
         try {
@@ -372,6 +419,7 @@ export function CategoriesManager({ categoriesRows, onRowsChange, onSave, onDele
                 onDeleteRequest={setDeleteTarget}
                 onRenameSub={handleRenameSub}
                 onRenameGroup={handleRenameGroup}
+                onChangeBucket={handleChangeBucket}
             />
             <TypeSection
                 type="Recette"
@@ -380,6 +428,7 @@ export function CategoriesManager({ categoriesRows, onRowsChange, onSave, onDele
                 onDeleteRequest={setDeleteTarget}
                 onRenameSub={handleRenameSub}
                 onRenameGroup={handleRenameGroup}
+                onChangeBucket={handleChangeBucket}
             />
 
             <Dialog open={!!deleteTarget} onClose={() => setDeleteTarget(null)} transitionDuration={0} maxWidth="xs" fullWidth>

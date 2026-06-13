@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import Box from '@mui/material/Box';
 import Divider from '@mui/material/Divider';
 import Typography from '@mui/material/Typography';
+import LinearProgress from '@mui/material/LinearProgress';
 import PersonIcon from '@mui/icons-material/Person';
 import { formatEuro } from './config/Config.js';
 import {
@@ -11,7 +12,21 @@ import {
     recapSubLabelSx, recapSubValueSx, recapSubValuePositiveSx, recapSubValueNegativeSx,
 } from '../styles/StatCardRecapStyles.js';
 
-function StatCardRecap({ comptesData, rowsByCompte, virementInternesRows, compteJointData, compteJointConfig }) {
+const PERIODE_MOIS = { mois: 0, '3mois': 3, '6mois': 6, '12mois': 12 };
+
+function periodeDebut(periode) {
+    const now = new Date();
+    if (periode === 'mois') {
+        return new Date(now.getFullYear(), now.getMonth(), 1);
+    }
+    const nbMois = PERIODE_MOIS[periode] ?? 12;
+    const d = new Date(now);
+    d.setMonth(d.getMonth() - nbMois);
+    d.setHours(0, 0, 0, 0);
+    return d;
+}
+
+function StatCardRecap({ comptesData, rowsByCompte, virementInternesRows, compteJointData, compteJointConfig, categoriesRows = [], budget503020Config = {}, fraisFixesRows = [] }) {
     const stats = useMemo(() => {
         let totalInstantT = 0;
         let totalTheorique = 0;
@@ -77,10 +92,84 @@ function StatCardRecap({ comptesData, rowsByCompte, virementInternesRows, compte
         const ratio = totalRecettes12m > 0 ? (totalDepenses12m / totalRecettes12m * 100) : null;
         const reste = totalRecettes12m - totalDepenses12m;
 
-        return { totalInstantT, totalTheorique, totalDepenses12m, totalRecettes12m, ratio, reste };
-    }, [comptesData, rowsByCompte, virementInternesRows, compteJointData, compteJointConfig]);
+        // ── Règle 50/30/20 ──────────────────────────────────────────────────────
+        const bucketMap = Object.fromEntries(categoriesRows.map(c => [c.id, c.bucket]));
+        const epargneIds = new Set(categoriesRows.filter(c => c.nom === 'Épargne' && c.type === 'Dépense').map(c => c.id));
+        const debut503020 = periodeDebut(budget503020Config.periode ?? '12mois');
+        const nbMoisPeriode503020 = { mois: 1, '3mois': 3, '6mois': 6, '12mois': 12 }[budget503020Config.periode ?? '12mois'] ?? 12;
 
-    const { totalInstantT, totalTheorique, totalDepenses12m, totalRecettes12m, ratio, reste } = stats;
+        // IDs des frais fixes non-mensuels → leurs transactions seront remplacées par montantMensuel
+        const nonMonthlyFFIds = new Set(
+            fraisFixesRows
+                .filter(ff => !ff.archived && ff.type === 'Dépense' && ff.periodicite !== 'Mensuel')
+                .map(ff => ff.id)
+        );
+
+        let revenus503020 = 0;
+        let besoins503020 = 0;
+        let envies503020 = 0;
+        let epargne503020 = 0;
+
+        const seenIds503020 = new Set();
+
+        for (const compte of comptesData) {
+            const rows = rowsByCompte[compte.nomCompte] ?? [];
+            for (const r of rows) {
+                if (r.depenseRecettesAMasquer) continue;
+                if (!r.dateDepensesRecettes) continue;
+                if (new Date(r.dateDepensesRecettes) < debut503020) continue;
+                // Les transactions issues d'un frais fixe non-mensuel sont remplacées par l'amortissement
+                if (r.fraisFixeRef && nonMonthlyFFIds.has(r.fraisFixeRef)) continue;
+                seenIds503020.add(r.id);
+                if (r.categorie === 'Revenues') revenus503020 += r.recettes || 0;
+                if (epargneIds.has(r.sousCategorie)) epargne503020 += r.depenses || 0;
+                if (!epargneIds.has(r.sousCategorie)) {
+                    const bucket = bucketMap[r.sousCategorie];
+                    if (bucket === 'besoins') besoins503020 += r.depenses || 0;
+                    if (bucket === 'envies') envies503020 += r.depenses || 0;
+                }
+            }
+        }
+
+        // Compte joint — part moi
+        if (compteJointData) {
+            const nom = compteJointData.nomCompte;
+            const rows = rowsByCompte[nom] ?? [];
+            for (const r of rows) {
+                if (seenIds503020.has(r.id)) continue;
+                if (r.depenseRecettesAMasquer) continue;
+                if (!r.dateDepensesRecettes) continue;
+                if (new Date(r.dateDepensesRecettes) < debut503020) continue;
+                if (r.fraisFixeRef && nonMonthlyFFIds.has(r.fraisFixeRef)) continue;
+                const pMoi = ((r.pourcentageMoi ?? compteJointConfig.pourcentageDefaut ?? 50)) / 100;
+                if (r.categorie === 'Revenues') revenus503020 += (r.recettes || 0) * pMoi;
+                if (r.categorie === 'Épargne') epargne503020 += (r.depenses || 0) * pMoi;
+                const bucket = bucketMap[r.sousCategorie];
+                if (bucket === 'besoins') besoins503020 += (r.depenses || 0) * pMoi;
+                if (bucket === 'envies') envies503020 += (r.depenses || 0) * pMoi;
+            }
+        }
+
+        // Frais fixes non-mensuels — montantMensuel (déjà pro-ratisé + pourcentageMoi) × nb mois période
+        for (const ff of fraisFixesRows) {
+            if (ff.archived) continue;
+            if (ff.type !== 'Dépense') continue;
+            if (ff.periodicite === 'Mensuel') continue;
+            if (ff.montantMensuel == null) continue;
+            besoins503020 += ff.montantMensuel * nbMoisPeriode503020;
+        }
+
+        const budget503020 = revenus503020 > 0 ? {
+            revenus: revenus503020,
+            besoins: { montant: besoins503020, pct: besoins503020 / revenus503020 * 100, cible: 50 },
+            envies:  { montant: envies503020,  pct: envies503020  / revenus503020 * 100, cible: 30 },
+            epargne: { montant: epargne503020, pct: epargne503020 / revenus503020 * 100, cible: 20 },
+        } : null;
+
+        return { totalInstantT, totalTheorique, totalDepenses12m, totalRecettes12m, ratio, reste, budget503020 };
+    }, [comptesData, rowsByCompte, virementInternesRows, compteJointData, compteJointConfig, categoriesRows, budget503020Config, fraisFixesRows]);
+
+    const { totalInstantT, totalTheorique, totalDepenses12m, totalRecettes12m, ratio, reste, budget503020 } = stats;
 
     return (
         <Box sx={recapCardSx}>
@@ -125,6 +214,50 @@ function StatCardRecap({ comptesData, rowsByCompte, virementInternesRows, compte
                         </Box>
                     </Box>
                 </Box>
+
+                {budget503020 && (
+                    <>
+                        <Divider orientation="vertical" flexItem sx={recapVerticalDividerSx} />
+                        <Box sx={recapSectionSx}>
+                            <Typography sx={recapSectionLabelSx}>Règle 50 / 30 / 20</Typography>
+                            <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75, width: '100%', maxWidth: 200 }}>
+                                {[
+                                    { label: 'Besoins', ...budget503020.besoins },
+                                    { label: 'Envies',  ...budget503020.envies },
+                                    { label: 'Épargne', ...budget503020.epargne },
+                                ].map(({ label, montant, pct, cible }) => {
+                                    const ecart = Math.abs(pct - cible);
+                                    const color = ecart <= 5 ? '#4caf50' : ecart <= 10 ? '#ff9800' : '#f44336';
+                                    return (
+                                        <Box key={label}>
+                                            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', mb: 0.25 }}>
+                                                <Typography sx={{ fontSize: '0.72rem', color: '#888' }}>{label}</Typography>
+                                                <Typography sx={{ fontSize: '0.72rem', fontWeight: 600, color }}>
+                                                    {pct.toFixed(1)} % <Typography component="span" sx={{ fontSize: '0.68rem', color: '#aaa', fontWeight: 400 }}>/ {cible} %</Typography>
+                                                    <Typography component="span" sx={{ fontSize: '0.68rem', color: '#aaa', fontWeight: 400 }}>{' · '}</Typography><Typography component="span" sx={{ fontSize: '0.68rem', color: '#bbb', fontWeight: 400 }}>{formatEuro(montant)}</Typography>
+                                                </Typography>
+                                            </Box>
+                                            <LinearProgress
+                                                variant="determinate"
+                                                value={Math.min(pct, 100)}
+                                                sx={{
+                                                    height: 5,
+                                                    borderRadius: 3,
+                                                    backgroundColor: '#f0f0f0',
+                                                    '& .MuiLinearProgress-bar': { backgroundColor: color, borderRadius: 3 },
+                                                }}
+                                            />
+                                        </Box>
+                                    );
+                                })}
+                                <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', pt: 0.5, borderTop: '1px solid #f0f0f0' }}>
+                                    <Typography sx={{ fontSize: '0.72rem', color: '#888' }}>Revenus</Typography>
+                                    <Typography sx={{ fontSize: '0.68rem', fontWeight: 400, color: '#bbb' }}>{formatEuro(budget503020.revenus)}</Typography>
+                                </Box>
+                            </Box>
+                        </Box>
+                    </>
+                )}
 
             </Box>
         </Box>

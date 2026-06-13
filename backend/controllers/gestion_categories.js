@@ -5,6 +5,7 @@ const formater = (doc) => ({
     groupe: doc.groupe,
     nom: doc.nom,
     type: doc.type,
+    bucket: doc.bucket ?? null,
 });
 
 exports.listeCategories = async (req, res) => {
@@ -18,8 +19,8 @@ exports.listeCategories = async (req, res) => {
 
 exports.ajoutCategorie = async (req, res) => {
     try {
-        const { groupe, nom, type } = req.body;
-        const doc = await new categorie({ groupe: String(groupe).trim(), nom: String(nom).trim(), type }).save();
+        const { groupe, nom, type, bucket } = req.body;
+        const doc = await new categorie({ groupe: String(groupe).trim(), nom: String(nom).trim(), type, bucket: bucket ?? null }).save();
         res.status(201).json(formater(doc));
     } catch (error) {
         res.status(400).json({ error: error.message });
@@ -28,10 +29,10 @@ exports.ajoutCategorie = async (req, res) => {
 
 exports.modificationCategorie = async (req, res) => {
     try {
-        const { id, groupe, nom, type } = req.body;
+        const { id, groupe, nom, type, bucket } = req.body;
         const doc = await categorie.findByIdAndUpdate(
             id,
-            { $set: { groupe: String(groupe).trim(), nom: String(nom).trim(), type } },
+            { $set: { groupe: String(groupe).trim(), nom: String(nom).trim(), type, bucket: bucket ?? null } },
             { returnDocument: 'after' }
         );
         if (!doc) return res.status(404).json({ message: 'Catégorie introuvable' });

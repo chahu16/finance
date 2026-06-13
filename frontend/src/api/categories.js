@@ -8,7 +8,7 @@ export const fetchCategories = async () => {
 
 export const saveCategorie = async (row, isNew) => {
     const path = isNew ? '/ajout-categorie' : '/modification-categorie';
-    return post(path, { id: row.id, groupe: row.groupe, nom: row.nom, type: row.type });
+    return post(path, { id: row.id, groupe: row.groupe, nom: row.nom, type: row.type, bucket: row.bucket ?? null });
 };
 
 export const deleteCategorie = async (row) => {

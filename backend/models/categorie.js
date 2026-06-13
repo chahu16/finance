@@ -4,6 +4,7 @@ const categorieSchema = mongoose.Schema({
     groupe: { type: String, required: true },
     nom: { type: String, required: true },
     type: { type: String, required: true, enum: ['Dépense', 'Recette'] },
+    bucket: { type: String, enum: ['besoins', 'envies', null], default: null },
 }, { timestamps: true });
 
 module.exports = mongoose.model('categories', categorieSchema);

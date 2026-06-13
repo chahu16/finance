@@ -36,6 +36,7 @@ const fromApi = (doc) => {
         jourPrelevement,
         type: TYPE_MAP[doc.type] ?? doc.type,
         montant: doc.montant,
+        montantMensuel: doc.montantMensuel ?? null,
         periodicite,
         pourcentageMoi: doc.parts?.[0] ?? null,
         archived: !!doc.archive,
