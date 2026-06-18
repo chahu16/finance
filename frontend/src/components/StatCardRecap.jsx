@@ -4,15 +4,16 @@ import Divider from '@mui/material/Divider';
 import Typography from '@mui/material/Typography';
 import LinearProgress from '@mui/material/LinearProgress';
 import PersonIcon from '@mui/icons-material/Person';
-import { formatEuro } from './config/Config.js';
+import { formatEuro, getMonthLabel } from './config/Config.js';
 import {
     recapCardSx, recapHeaderSx, recapIconSx, recapTitleSx,
-    recapSectionsSx, recapSectionSx, recapSectionLabelSx, recapBigValueSx,
+    recapSectionsSx, recapSectionSx, recapSectionLabelSx,
     recapVerticalDividerSx, recapSubItemsRowSx, recapSubItemSx,
     recapSubLabelSx, recapSubValueSx, recapSubValuePositiveSx, recapSubValueNegativeSx,
 } from '../styles/StatCardRecapStyles.js';
 
 const PERIODE_MOIS = { mois: 0, '3mois': 3, '6mois': 6, '12mois': 12 };
+const PERIODE_LABEL = { mois: 'Mois en cours', '3mois': '3 derniers mois', '6mois': '6 derniers mois', '12mois': '12 derniers mois' };
 
 function periodeDebut(periode) {
     const now = new Date();
@@ -32,8 +33,15 @@ function StatCardRecap({ comptesData, rowsByCompte, virementInternesRows, compte
         let totalTheorique = 0;
         let totalDepenses12m = 0;
         let totalRecettes12m = 0;
+        let totalDepensesMois = 0;
+        let totalRecettesMois = 0;
 
-        const twelveMonthsAgo = new Date();
+        const now = new Date();
+        const currentMonth = now.getMonth();
+        const currentYear = now.getFullYear();
+        const monthLabel = getMonthLabel(now);
+
+        const twelveMonthsAgo = new Date(now);
         twelveMonthsAgo.setFullYear(twelveMonthsAgo.getFullYear() - 1);
         twelveMonthsAgo.setHours(0, 0, 0, 0);
 
@@ -58,12 +66,25 @@ function StatCardRecap({ comptesData, rowsByCompte, virementInternesRows, compte
             totalInstantT  += si + rows.filter(r => r.dateDepensesRecettes != null).reduce((a, r) => a + net(r), 0) + virNetForCompte(nom, true)  - sdc;
             totalTheorique += si + rows.reduce((a, r) => a + net(r), 0)                                             + virNetForCompte(nom, false) - sdc;
 
-            rows
-                .filter(r => !r.depenseRecettesAMasquer && r.dateDepensesRecettes && new Date(r.dateDepensesRecettes) >= twelveMonthsAgo)
-                .forEach(r => {
+            for (const r of rows) {
+                if (!r.depenseRecettesAMasquer && r.dateDepensesRecettes && new Date(r.dateDepensesRecettes) >= twelveMonthsAgo) {
                     totalDepenses12m += r.depenses || 0;
                     totalRecettes12m += r.recettes || 0;
-                });
+                }
+            }
+
+            for (const r of rows) {
+                if (r.depenseRecettesAMasquer || !r.dateDepensesRecettes) continue;
+                const d = new Date(r.dateDepensesRecettes);
+                if (d.getMonth() !== currentMonth || d.getFullYear() !== currentYear) continue;
+                if (r.noteDeFrais) {
+                    const delta = r.depassementPlafond ?? r.depenseReelle ?? 0;
+                    totalDepensesMois += delta - ((r.depenses || 0) - delta);
+                } else {
+                    totalDepensesMois += r.depenses || 0;
+                }
+                if (r.categorie === 'Revenues') totalRecettesMois += r.recettes || 0;
+            }
         }
 
         // Compte joint — part moi uniquement
@@ -86,6 +107,24 @@ function StatCardRecap({ comptesData, rowsByCompte, virementInternesRows, compte
                     const p = pMoi(r);
                     totalDepenses12m += (r.depenses || 0) * p;
                     totalRecettes12m += (r.recettes || 0) * p;
+                });
+
+            rows
+                .filter(r => {
+                    if (r.depenseRecettesAMasquer) return false;
+                    if (!r.dateDepensesRecettes) return false;
+                    const d = new Date(r.dateDepensesRecettes);
+                    return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
+                })
+                .forEach(r => {
+                    const p = pMoi(r);
+                    if (r.noteDeFrais) {
+                        const delta = r.depassementPlafond ?? r.depenseReelle ?? 0;
+                        totalDepensesMois += (delta - ((r.depenses || 0) - delta)) * p;
+                    } else {
+                        totalDepensesMois += (r.depenses || 0) * p;
+                    }
+                    if (r.categorie === 'Revenues') totalRecettesMois += (r.recettes || 0) * p;
                 });
         }
 
@@ -166,10 +205,53 @@ function StatCardRecap({ comptesData, rowsByCompte, virementInternesRows, compte
             epargne: { montant: epargne503020, pct: epargne503020 / revenus503020 * 100, cible: 20 },
         } : null;
 
-        return { totalInstantT, totalTheorique, totalDepenses12m, totalRecettes12m, ratio, reste, budget503020 };
+        // ── Notes de frais (comptes perso uniquement) ──────────────────────────
+        const catFraisProId = categoriesRows.find(c => c.groupe === 'Remboursement' && c.nom === 'Frais pro')?.id ?? null;
+
+        let notesEnCours = 0;
+        let deltaPoche12m = 0;
+        let totalRemboursRecus12m = 0;
+        let totalRemboursableMarque12m = 0;
+        let totalRemboursablePending12m = 0;
+
+        for (const compte of comptesData) {
+            const rows = rowsByCompte[compte.nomCompte] ?? [];
+            for (const r of rows) {
+                if (r.noteDeFrais) {
+                    if (!r.notesFraisRemboursee) {
+                        const depassement = r.depassementPlafond ?? r.depenseReelle ?? 0;
+                        notesEnCours += (r.depenses || 0) - depassement;
+                    }
+
+                    if (r.dateDepensesRecettes && new Date(r.dateDepensesRecettes) >= twelveMonthsAgo) {
+                        const dep = r.depassementPlafond ?? r.depenseReelle ?? null;
+                        if (dep != null) deltaPoche12m += dep;
+                        if (r.notesFraisRemboursee) {
+                            // Exclure les notes sans catégorie plafond reconnue (cohérent backend)
+                            if (dep != null) totalRemboursableMarque12m += (r.depenses || 0) - dep;
+                        } else {
+                            // Pending : fallback full depenses si pas de plafond (= montantRembBoursable backend)
+                            totalRemboursablePending12m += dep != null ? (r.depenses || 0) - dep : (r.depenses || 0);
+                        }
+                    }
+                }
+                // Remboursements reçus bien catégorisés (12 mois)
+                if (catFraisProId && r.sousCategorie === catFraisProId && r.recettes > 0
+                    && r.dateDepensesRecettes && new Date(r.dateDepensesRecettes) >= twelveMonthsAgo) {
+                    totalRemboursRecus12m += r.recettes;
+                }
+            }
+        }
+
+        // balance = reçus - (remboursable des notes marquées + remboursable des notes en attente)
+        // négatif → reste à recevoir ; positif → trop perçu
+        const tropMoinsPlein12m = totalRemboursRecus12m - totalRemboursableMarque12m - totalRemboursablePending12m;
+        const hasTropMoinsPlein = Math.abs(tropMoinsPlein12m) > 0.005;
+
+        return { totalInstantT, totalTheorique, totalDepenses12m, totalRecettes12m, ratio, reste, budget503020, notesEnCours, deltaPoche12m, tropMoinsPlein12m, hasTropMoinsPlein, totalDepensesMois, totalRecettesMois, monthLabel };
     }, [comptesData, rowsByCompte, virementInternesRows, compteJointData, compteJointConfig, categoriesRows, budget503020Config, fraisFixesRows]);
 
-    const { totalInstantT, totalTheorique, totalDepenses12m, totalRecettes12m, ratio, reste, budget503020 } = stats;
+    const { totalInstantT, totalTheorique, totalDepenses12m, totalRecettes12m, ratio, reste, budget503020, notesEnCours, deltaPoche12m, tropMoinsPlein12m, hasTropMoinsPlein, totalDepensesMois, totalRecettesMois, monthLabel } = stats;
 
     return (
         <Box sx={recapCardSx}>
@@ -180,15 +262,25 @@ function StatCardRecap({ comptesData, rowsByCompte, virementInternesRows, compte
             <Box sx={recapSectionsSx}>
 
                 <Box sx={recapSectionSx}>
-                    <Typography sx={recapSectionLabelSx}>Instant T</Typography>
-                    <Typography sx={recapBigValueSx}>{formatEuro(totalInstantT)}</Typography>
-                </Box>
-
-                <Divider orientation="vertical" flexItem sx={recapVerticalDividerSx} />
-
-                <Box sx={recapSectionSx}>
-                    <Typography sx={recapSectionLabelSx}>Solde théorique</Typography>
-                    <Typography sx={recapBigValueSx}>{formatEuro(totalTheorique)}</Typography>
+                    <Typography sx={recapSectionLabelSx}>Récapitulatif du mois de {monthLabel} (en cours)</Typography>
+                    <Box sx={recapSubItemsRowSx}>
+                        <Box sx={recapSubItemSx}>
+                            <Typography sx={recapSubLabelSx}>Dépenses</Typography>
+                            <Typography sx={recapSubValueSx}>{formatEuro(totalDepensesMois)}</Typography>
+                        </Box>
+                        <Box sx={recapSubItemSx}>
+                            <Typography sx={recapSubLabelSx}>Recettes</Typography>
+                            <Typography sx={recapSubValueSx}>{formatEuro(totalRecettesMois)}</Typography>
+                        </Box>
+                        <Box sx={recapSubItemSx}>
+                            <Typography sx={recapSubLabelSx}>Solde théorique</Typography>
+                            <Typography sx={recapSubValueSx}>{formatEuro(totalTheorique)}</Typography>
+                        </Box>
+                        <Box sx={recapSubItemSx}>
+                            <Typography sx={recapSubLabelSx}>Instant T</Typography>
+                            <Typography sx={recapSubValueSx}>{formatEuro(totalInstantT)}</Typography>
+                        </Box>
+                    </Box>
                 </Box>
 
                 <Divider orientation="vertical" flexItem sx={recapVerticalDividerSx} />
@@ -215,11 +307,44 @@ function StatCardRecap({ comptesData, rowsByCompte, virementInternesRows, compte
                     </Box>
                 </Box>
 
+                <Divider orientation="vertical" flexItem sx={recapVerticalDividerSx} />
+
+                <Box sx={recapSectionSx}>
+                    <Typography sx={recapSectionLabelSx}>Notes de frais</Typography>
+                    <Box sx={recapSubItemsRowSx}>
+                        <Box sx={recapSubItemSx}>
+                            <Typography sx={recapSubLabelSx}>En cours</Typography>
+                            <Typography sx={recapSubValueSx}>{formatEuro(notesEnCours)}</Typography>
+                        </Box>
+                        <Box sx={recapSubItemSx}>
+                            <Typography sx={recapSubLabelSx}>Delta poche (12m)</Typography>
+                            <Typography sx={recapSubValueSx}>{formatEuro(deltaPoche12m)}</Typography>
+                        </Box>
+                        {hasTropMoinsPlein && (
+                            <Box sx={recapSubItemSx}>
+                                <Typography sx={recapSubLabelSx}>
+                                    {tropMoinsPlein12m < 0 ? 'Reste à rembourser' : 'Trop perçu'}
+                                </Typography>
+                                <Typography sx={tropMoinsPlein12m < 0 ? recapSubValueSx : recapSubValuePositiveSx}>
+                                    {formatEuro(Math.abs(tropMoinsPlein12m))}
+                                </Typography>
+                            </Box>
+                        )}
+                    </Box>
+                </Box>
+
                 {budget503020 && (
                     <>
                         <Divider orientation="vertical" flexItem sx={recapVerticalDividerSx} />
                         <Box sx={recapSectionSx}>
-                            <Typography sx={recapSectionLabelSx}>Règle 50 / 30 / 20</Typography>
+                            <Typography sx={recapSectionLabelSx}>
+                                Règle 50 / 30 / 20
+                                {budget503020Config?.periode && (
+                                    <Typography component="span" sx={{ ml: 0.75, fontSize: 'inherit' }}>
+                                        ({PERIODE_LABEL[budget503020Config.periode] ?? budget503020Config.periode})
+                                    </Typography>
+                                )}
+                            </Typography>
                             <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.75, width: '100%', maxWidth: 200 }}>
                                 {[
                                     { label: 'Besoins', ...budget503020.besoins },

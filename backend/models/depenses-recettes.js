@@ -44,6 +44,7 @@ const depensesRecettesSchema = mongoose.Schema({
     fraisFixePeriode: { type: String, default: null },
     parts: { type: [Number], default: [50, 50] },
     sousCategorie: { type: mongoose.Schema.Types.ObjectId, ref: 'categories', default: null },
+    depassementPlafond: { type: Number, default: null }, // centimes — figé à la saisie (depenses - plafond actif à la date)
 }, { timestamps: true });
 
 module.exports = mongoose.model('depenses-recettes', depensesRecettesSchema);

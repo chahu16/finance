@@ -41,16 +41,16 @@ export const recapSectionSx = {
 };
 
 export const recapSectionLabelSx = {
-    fontSize: '0.72rem',
-    color: '#888',
-    textTransform: 'uppercase',
-    letterSpacing: '0.06em',
+    fontSize: '0.85rem',
+    fontWeight: 600,
+    color: '#1a1a1a',
+    letterSpacing: '0.01em',
     mb: 0.75,
 };
 
 export const recapBigValueSx = {
-    fontSize: '1.4rem',
-    fontWeight: 700,
+    fontSize: '0.95rem',
+    fontWeight: 600,
     color: '#1a1a1a',
 };
 

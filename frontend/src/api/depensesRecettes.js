@@ -20,6 +20,8 @@ const fromApi = (doc) => ({
     fraisFixeRef: doc.fraisFixeRef ?? null,
     categorie: doc.categorie || '',
     sousCategorie: doc.sousCategorie || '',
+    depenseReelle: doc.depenseReelle ?? null,
+    depassementPlafond: doc.depassementPlafond ?? null,
 });
 
 // Mapping Frontend → Backend
@@ -71,4 +73,13 @@ export const saveDepenseRecette = async (row, isNew) => {
 export const deleteDepenseRecette = async (row) => {
     if (!isMongoId(row.id)) return; // ligne jamais persistée en base — suppression locale uniquement
     await post('/suppression-depense-recette', { id: row.id });
+};
+
+export const rembourserNotesFrais = async (sousCategorieId) => {
+    const json = await post('/rembourser-notes-frais', { sousCategorieId });
+    return {
+        updated: json.updated.map(fromApi),
+        discordance: json.discordance ?? null,
+        totalRecu: json.totalRecu ?? null,
+    };
 };

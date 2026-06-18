@@ -34,6 +34,8 @@ router.post('/modification-virement-interne', gestionDepensesRecettes.modificati
 router.post('/suppression-virement-interne', gestionDepensesRecettes.suppressionVirement);
 router.post('/ajout-virement-interne-bulk', gestionDepensesRecettes.ajoutVirementsBulk);
 
+router.post('/rembourser-notes-frais', gestionDepensesRecettes.rembourserNotesFrais);
+
 router.get('/liste-frais-fixe', gestionFraisFixes.listeFraisFixes);
 router.post('/ajout-frais-fixe', gestionFraisFixes.ajoutFraisFixes);
 router.post('/modification-frais-fixe', gestionFraisFixes.modificationFraisFixes);

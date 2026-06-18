@@ -156,6 +156,7 @@ function parseCSVValue(value, type) {
 
 // ─── Barre d'outils avec bouton Ajouter ───────────────────────────────────────
 function EditToolbar({ setRows, setRowModesModel, addButtonLabel, emptyRow, fieldFocusAdd, isAnyRowEditing, setShowErrors, customColumns, validateRow, showSnackbar, toolbarSlotEnd }) {
+    const apiRef = useGridApiContext();
     const fileInputRef = React.useRef(null);
     const [errorDialog, setErrorDialog] = React.useState({ open: false, rows: [], imported: 0 });
 
@@ -168,6 +169,9 @@ function EditToolbar({ setRows, setRowModesModel, addButtonLabel, emptyRow, fiel
             ...oldModel,
             [id]: { mode: GridRowModes.Edit, fieldToFocus: fieldFocusAdd },
         }));
+        setTimeout(() => {
+            apiRef.current.scrollToIndexes({ rowIndex: 0 });
+        }, 50);
     };
 
     const handleImportClick = () => {

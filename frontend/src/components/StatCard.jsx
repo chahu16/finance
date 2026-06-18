@@ -28,7 +28,10 @@ function StatCard({ compte, rows, compteData, virementInternesRows = [] }) {
                 const d = new Date(r.dateDepensesRecettes);
                 return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
             })
-            .reduce((acc, r) => acc + (r.depenses || 0), 0);
+            .reduce((acc, r) => {
+                const dep = r.noteDeFrais ? (r.depenseReelle ?? r.depenses) : (r.depenses || 0);
+                return acc + dep;
+            }, 0);
 
         const virementNet = virementInternesRows.reduce((acc, v) => {
             if (v.compteDestination === compte) return acc + (v.montant || 0);

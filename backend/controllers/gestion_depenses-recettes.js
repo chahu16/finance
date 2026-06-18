@@ -2,6 +2,8 @@ const { toCents } = require('../utils/utils.js');
 
 const depensesRecettes = require('../models/depenses-recettes.js');
 const compte = require('../models/compte.js');
+const plafondModel = require('../models/plafond-notes-frais.js');
+const { calculerDepenseReelleParCategorie } = require('../utils/plafond-utils.js');
 const dayjs = require('dayjs');
 const customParseFormat = require('dayjs/plugin/customParseFormat');
 dayjs.extend(customParseFormat);
@@ -50,21 +52,36 @@ const transformerVersSchema = (data, mappingComptes = {}) => {
 };
 
 /**
- * Prépare la réponse pour le DataGrid (ID et nom du compte)
+ * Prépare la réponse pour le DataGrid (ID et nom du compte).
+ * Si plafondDoc est fourni, calcule depenseReelle (dépassement en €) pour les notes de frais.
  */
-const formaterPourFront = (doc) => {
-    const item = doc.toObject();
-    return {
+const formaterPourFront = (doc, plafondDoc = null) => {
+    const item = doc.toObject ? doc.toObject() : doc;
+    const depensesCents = item.depenses ?? 0;
+
+    let depenseReelle = null;
+    if (plafondDoc && item.noteDeFrais && depensesCents > 0 && item.dateDepensesRecettes) {
+        const catNom = item.sousCategorie?.nom ?? '';
+        const reelCents = calculerDepenseReelleParCategorie(depensesCents, catNom, plafondDoc, item.dateDepensesRecettes);
+        if (reelCents !== null) depenseReelle = reelCents / 100;
+    }
+
+    const result = {
         ...item,
         id: typeof item._id === 'object' ? item._id.toString() : item.id,
         compte: item.compte ? item.compte.nom : "",
         fraisFixeRef: item.fraisFixeRef ? item.fraisFixeRef.toString() : null,
-        depenses: (item.depenses ?? 0) / 100,
+        depenses: depensesCents / 100,
         recettes: (item.recettes ?? 0) / 100,
         parts: item.parts ?? [50, 50],
         categorie: item.sousCategorie?.groupe ?? '',
         sousCategorie: item.sousCategorie?._id?.toString() ?? '',
+        depassementPlafond: item.depassementPlafond != null ? item.depassementPlafond / 100 : null,
     };
+
+    if (depenseReelle !== null) result.depenseReelle = depenseReelle;
+
+    return result;
 };
 
 /**
@@ -113,20 +130,35 @@ const resolveComptesVirement = async (res, compteSource, compteDestination) => {
     return { sourceDoc, destDoc };
 };
 
+/**
+ * Calcule et persiste depassementPlafond (centimes) sur une note de frais déjà populée.
+ * No-op si la ligne n'est pas une note de frais ou si aucun plafond ne s'applique.
+ */
+const sauvegarderDepassement = async (doc, plafondDoc) => {
+    if (!doc.noteDeFrais || !doc.depenses || !doc.dateDepensesRecettes) return;
+    const catNom = doc.sousCategorie?.nom ?? '';
+    const depassementCents = calculerDepenseReelleParCategorie(doc.depenses, catNom, plafondDoc, doc.dateDepensesRecettes);
+    if (depassementCents === null) return;
+    await depensesRecettes.findByIdAndUpdate(doc._id, { $set: { depassementPlafond: depassementCents } });
+    doc.depassementPlafond = depassementCents;
+};
+
 // --- EXPORTS ---
 
 exports.dataGridDepensesRecettes = async (req, res) => {
     try {
-        const data = await depensesRecettes.find({
-            virementInterne: { $ne: true },  // On exclut les virements internes
-        }).populate({
-            path: 'compte',
-            match: { archive: { $ne: true }, estCompteJoint: { $ne: true } }
-        }).populate('sousCategorie');
+        const [data, plafondDoc] = await Promise.all([
+            depensesRecettes.find({
+                virementInterne: { $ne: true },
+            }).populate({
+                path: 'compte',
+                match: { archive: { $ne: true }, estCompteJoint: { $ne: true } }
+            }).populate('sousCategorie'),
+            plafondModel.findOne(),
+        ]);
 
         const dataFiltree = data.filter(d => d.compte !== null);
-
-        const formattedData = dataFiltree.map(formaterPourFront).sort(trierParDateDesc);
+        const formattedData = dataFiltree.map(d => formaterPourFront(d, plafondDoc)).sort(trierParDateDesc);
 
         res.status(200).json(formattedData);
     } catch (error) {
@@ -138,7 +170,6 @@ exports.dataGridDepensesRecettes = async (req, res) => {
 exports.ajoutDepenseRecette = async (req, res) => {
     try {
         const compteDoc = await compte.findOne({ nom: req.body.compte });
-        // Optionnel : Bloquer si le compte n'existe pas
         if (req.body.compte && !compteDoc) {
             return res.status(400).json({ message: `Le compte "${req.body.compte}" est introuvable.` });
         }
@@ -149,7 +180,9 @@ exports.ajoutDepenseRecette = async (req, res) => {
         await nouvelleLigne.populate('compte');
         await nouvelleLigne.populate('sousCategorie');
 
-        res.status(201).json(formaterPourFront(nouvelleLigne));
+        const plafondDoc = await plafondModel.findOne();
+        await sauvegarderDepassement(nouvelleLigne, plafondDoc);
+        res.status(201).json(formaterPourFront(nouvelleLigne, plafondDoc));
     } catch (error) {
         res.status(400).json({ error: error.message });
     }
@@ -166,7 +199,9 @@ exports.modificationDepenseRecette = async (req, res) => {
             { returnDocument: 'after' }
         ).populate('compte').populate('sousCategorie');
 
-        res.status(200).json(formaterPourFront(updatedDoc));
+        const plafondDoc = await plafondModel.findOne();
+        await sauvegarderDepassement(updatedDoc, plafondDoc);
+        res.status(200).json(formaterPourFront(updatedDoc, plafondDoc));
     } catch (error) {
         res.status(400).json({ error: error.message });
     }
@@ -289,15 +324,18 @@ exports.suppressionDepenseRecette = async (req, res, next) => {
 
 exports.dataGridCompteJoint = async (req, res) => {
     try {
-        const data = await depensesRecettes.find({
-            virementInterne: { $ne: true },
-        }).populate({
-            path: 'compte',
-            match: { estCompteJoint: true }
-        }).populate('sousCategorie');
+        const [data, plafondDoc] = await Promise.all([
+            depensesRecettes.find({
+                virementInterne: { $ne: true },
+            }).populate({
+                path: 'compte',
+                match: { estCompteJoint: true }
+            }).populate('sousCategorie'),
+            plafondModel.findOne(),
+        ]);
 
         const dataFiltree = data.filter(d => d.compte !== null);
-        const formattedData = dataFiltree.map(formaterPourFront).sort(trierParDateDesc);
+        const formattedData = dataFiltree.map(d => formaterPourFront(d, plafondDoc)).sort(trierParDateDesc);
 
         res.status(200).json(formattedData);
     } catch (error) {
@@ -401,6 +439,127 @@ exports.suppressionVirement = async (req, res) => {
     try {
         await depensesRecettes.deleteOne({ _id: req.body.id, virementInterne: true });
         res.status(200).json({ message: 'Virement supprimé !' });
+    } catch (error) {
+        res.status(400).json({ error: error.message });
+    }
+};
+
+// ============================================================
+// REMBOURSEMENT NOTES DE FRAIS
+// ============================================================
+
+exports.rembourserNotesFrais = async (req, res) => {
+    try {
+        const { sousCategorieId } = req.body;
+        if (!sousCategorieId) return res.status(400).json({ message: 'sousCategorieId requis' });
+
+        const plafondDoc = await plafondModel.findOne();
+
+        // Remboursable (centimes) ou null si la catégorie n'est pas reconnue par un plafond.
+        // null = note sans catégorie plafond valide (anciennes notes sans sous-catégorie).
+        const remboursableOuNull = (note) => {
+            if (note.depassementPlafond != null) return note.depenses - note.depassementPlafond;
+            const catNom = note.sousCategorie?.nom ?? '';
+            const dep = plafondDoc ? calculerDepenseReelleParCategorie(note.depenses, catNom, plafondDoc, note.dateDepensesRecettes) : null;
+            if (dep === null) return null;
+            return note.depenses - dep;
+        };
+
+        // Pour le marquage des nouvelles notes : si aucun plafond applicable, traiter comme entièrement remboursable.
+        const montantRembBoursable = (note) => remboursableOuNull(note) ?? note.depenses;
+
+        // 1. Total des remboursements reçus pour cette catégorie (comptes perso)
+        const remboursementsRecus = await depensesRecettes.find({
+            sousCategorie: sousCategorieId,
+            recettes: { $gt: 0 },
+            virementInterne: { $ne: true },
+        }).populate({ path: 'compte', match: { archive: { $ne: true }, estCompteJoint: { $ne: true } } });
+
+        const totalRecuCents = remboursementsRecus
+            .filter(r => r.compte !== null)
+            .reduce((acc, r) => acc + (r.recettes || 0), 0);
+
+        // 2. Total déjà couvert par les notes déjà marquées remboursées (comptes perso)
+        const notesDejaMarquees = await depensesRecettes.find({
+            noteDeFrais: true,
+            rembourser: true,
+            virementInterne: { $ne: true },
+        }).populate({ path: 'compte', match: { archive: { $ne: true }, estCompteJoint: { $ne: true } } })
+          .populate('sousCategorie');
+
+        // N'inclure dans totalAppliqué que les notes avec une catégorie plafond reconnue.
+        // Les 815+ anciennes notes sans catégorie (rembourser:true, sousCategorie:null) sont ignorées :
+        // elles auraient sinon gonflé totalAppliqué jusqu'à rendre le solde toujours négatif.
+        const totalAppliqueCents = notesDejaMarquees
+            .filter(n => n.compte !== null)
+            .reduce((acc, n) => acc + (remboursableOuNull(n) ?? 0), 0);
+
+        // 3. Solde disponible pour couvrir de nouvelles notes (cumul)
+        let restantCents = totalRecuCents - totalAppliqueCents;
+
+        // 4. Notes de frais non remboursées (comptes perso), triées date ASC
+        const toutes = await depensesRecettes.find({
+            noteDeFrais: true,
+            rembourser: { $ne: true },
+            virementInterne: { $ne: true },
+        }).populate({ path: 'compte', match: { archive: { $ne: true }, estCompteJoint: { $ne: true } } })
+          .populate('sousCategorie');
+
+        const notesFrais = toutes.filter(n => n.compte !== null);
+        notesFrais.sort((a, b) => {
+            const dA = a.dateDepensesRecettes;
+            const dB = b.dateDepensesRecettes;
+            if (!dA && !dB) return 0;
+            if (!dA) return 1;
+            if (!dB) return -1;
+            return new Date(dA) - new Date(dB);
+        });
+
+        const idsAMarquer = [];
+        for (const note of notesFrais) {
+            const rembBoursableCents = montantRembBoursable(note);
+            if (rembBoursableCents <= restantCents) {
+                idsAMarquer.push(note._id);
+                restantCents -= rembBoursableCents;
+            } else {
+                break;
+            }
+        }
+
+        if (idsAMarquer.length > 0) {
+            await depensesRecettes.updateMany(
+                { _id: { $in: idsAMarquer } },
+                { $set: { rembourser: true } }
+            );
+        }
+
+        const updatedDocs = idsAMarquer.length > 0
+            ? await depensesRecettes.find({ _id: { $in: idsAMarquer } }).populate('compte').populate('sousCategorie')
+            : [];
+        const updatedFormatted = updatedDocs.map(d => formaterPourFront(d, plafondDoc));
+
+        // Discordance : solde restant après marquage
+        let discordance = null;
+        if (restantCents > 0) {
+            const notesRestantes = notesFrais.filter(n => !idsAMarquer.some(id => id.equals(n._id)));
+            if (notesRestantes.length > 0) {
+                const prochaine = notesRestantes[0];
+                const prochaineRemb = montantRembBoursable(prochaine);
+                discordance = {
+                    type: 'insuffisant',
+                    manque: (prochaineRemb - restantCents) / 100, // combien il manque pour couvrir la prochaine
+                    notesRestantes: notesRestantes.map(n => ({
+                        description: n.description,
+                        date: n.dateDepensesRecettes,
+                        depenses: montantRembBoursable(n) / 100,
+                    })),
+                };
+            } else {
+                discordance = { type: 'excedent', restant: restantCents / 100 };
+            }
+        }
+
+        res.status(200).json({ updated: updatedFormatted, discordance, totalRecu: totalRecuCents / 100 });
     } catch (error) {
         res.status(400).json({ error: error.message });
     }

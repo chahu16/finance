@@ -51,7 +51,8 @@ function buildChartData(rows, compteJointNom, pourcentageDefaut) {
 
         if (dep > 0) {
             if (row.noteDeFrais) {
-                buckets[key].notesDeFrais += dep;
+                const depNF = row.depenseReelle != null ? row.depenseReelle * pct : dep;
+                buckets[key].notesDeFrais += depNF;
             } else if (row.fraisFixe) {
                 buckets[key].fraisFixes += dep;
             } else {

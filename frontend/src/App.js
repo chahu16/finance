@@ -33,9 +33,11 @@ import { validateRow as validateFraisFixeBaseRow } from './components/utils/Frai
 import { GridEditSousCategorieCell } from './components/utils/SousCategorieCell.jsx';
 import { computeFraisFixeTrigger } from './components/utils/FraisFixesTrigger.js';
 import { DepensesRecettesColumns, snackbarMessages, initialSort, onFieldChange } from './components/gridConfigs/DepensesRecettesGrid.js';
-import { fetchDepensesRecettes, saveDepenseRecette, deleteDepenseRecette } from './api/depensesRecettes.js';
+import { fetchDepensesRecettes, saveDepenseRecette, deleteDepenseRecette, rembourserNotesFrais } from './api/depensesRecettes.js';
+import RemboursementDiscordanceDialog from './components/RemboursementDiscordanceDialog.jsx';
 import { fetchCategories, saveCategorie, deleteCategorie } from './api/categories.js';
 import { CategoriesManager } from './components/CategoriesManager.jsx';
+import PlafondNotesFrais from './components/PlafondNotesFrais.jsx';
 import { ComptesColumns, snackbarMessages as comptesMessages, initialSort as comptesInitialSort, extraRowDefaults as comptesExtraRowDefaults } from './components/gridConfigs/ComptesGrid.js';
 import { fetchComptes, saveCompte, deleteCompte, toggleArchiveCompte } from './api/comptes.js';
 import { fetchFraisFixes, saveFraisFixe, deleteFraisFixe, toggleArchiveFraisFixe } from './api/fraisFixes.js';
@@ -109,6 +111,7 @@ const ToggleArchivedButton = ({ shown, onToggle, label }) => (
 const PARAMETRAGE_SECTIONS = [
     'Comptes',
     'Frais fixes',
+    'Notes de frais',
     'Virements internes',
     'Catégories',
     'Paramétrage',
@@ -127,6 +130,9 @@ function App() {
         await deleteDepenseRecette(row);
         return 'delete';
     }, []);
+
+    const [remboursementInfo, setRemboursementInfo] = useState(null);
+    const pendingRemboursements = useRef([]);
 
     const onSaveVirementInterne = useCallback(async (row, isNew) => {
         const savedRow = await saveVirementInterne(row, isNew);
@@ -170,6 +176,55 @@ function App() {
 
     const [fraisFixesRows, setFraisFixesRows] = useState([]);
     const [categoriesRows, setCategoriesRows] = useState([]);
+
+    const catRemboursementFraisPro = useMemo(
+        () => categoriesRows.find(c => c.groupe === 'Remboursement' && c.nom === 'Frais pro') ?? null,
+        [categoriesRows]
+    );
+
+    const onSaveDepenseRecette = useCallback(async (row, isNew) => {
+        const savedRow = await saveDepenseRecette(row, isNew);
+
+        if (
+            catRemboursementFraisPro &&
+            savedRow.recettes > 0 &&
+            savedRow.sousCategorie === catRemboursementFraisPro.id
+        ) {
+            try {
+                const result = await rembourserNotesFrais(catRemboursementFraisPro.id);
+                if (result.updated.length > 0) {
+                    // Stocké dans un ref pour être appliqué dans onRowsChangeDepRecNormal
+                    // juste après que le DataGrid mette à jour son état local (sinon la mise à jour serait écrasée).
+                    pendingRemboursements.current = result.updated;
+                }
+                setRemboursementInfo({
+                    montant: result.totalRecu,
+                    updated: result.updated,
+                    discordance: result.discordance,
+                });
+            } catch (err) {
+                console.error('Erreur remboursement notes de frais:', err);
+            }
+        }
+
+        return savedRow;
+    }, [catRemboursementFraisPro]);
+
+    // Wrapper onRowsChange pour le DataGrid des dépenses/recettes normales.
+    // Applique les mises à jour de remboursement en attente (pendingRemboursements) sur les rows
+    // que le DataGrid vient de produire, avant de les passer à setRows.
+    const onRowsChangeDepRecNormal = useCallback((newRows) => {
+        if (pendingRemboursements.current.length > 0) {
+            const pending = pendingRemboursements.current;
+            pendingRemboursements.current = [];
+            setRows(newRows.map(r => {
+                const u = pending.find(u => u.id === r.id);
+                return u ?? r;
+            }));
+        } else {
+            setRows(newRows);
+        }
+    }, []);
 
     const onDeleteConfirmFraisFixe = useCallback(async (row) => {
         await deleteFraisFixe(row);
@@ -234,12 +289,17 @@ function App() {
     //   - Un seul placeholder null-date par frais fixe par période (clé : fraisFixePeriode).
     //   - Si le mois précédent n'est pas confirmé, le mois suivant crée quand même sa ligne.
     //   - Aucune suppression automatique : le placeholder reste jusqu'à saisie d'une date.
+    // Cas particulier : placeholders sauvegardés avec fraisFixePeriode=null (données corrompues
+    //   d'une version antérieure). Si en fenêtre → recycler avec les bons montants/période.
+    //   Hors fenêtre → supprimer (artefact obsolète).
     useEffect(() => {
         const today = new Date();
         today.setHours(0, 0, 0, 0);
 
         setRows(prevRows => {
             const toAdd = [];
+            const toFix = new Map(); // id → ligne corrigée (placeholder null-période recyclé)
+            const toRemoveIds = new Set(); // ids des artefacts null-période à supprimer
 
             for (const ff of fraisFixesRows) {
                 if (ff.archived) continue;
@@ -248,6 +308,41 @@ function App() {
 
                 const description = ff.description +
                     (trigger?.occurrenceLabel ? ` (${trigger.occurrenceLabel})` : '');
+
+                // Détection d'un placeholder sauvegardé sans période (fraisFixePeriode == null)
+                const nullPeriodPlaceholder = prevRows.find(r =>
+                    r.compte === ff.compte &&
+                    r.fraisFixeRef === ff.id &&
+                    r.fraisFixe === true &&
+                    r.dateDepensesRecettes == null &&
+                    r.fraisFixePeriode == null
+                );
+
+                if (nullPeriodPlaceholder) {
+                    // Un placeholder avec la bonne période existe-t-il déjà ?
+                    const correctPeriodExists = trigger?.inTriggerWindow && prevRows.some(r =>
+                        r.compte === ff.compte &&
+                        r.fraisFixeRef === ff.id &&
+                        r.fraisFixe === true &&
+                        r.dateDepensesRecettes == null &&
+                        r.fraisFixePeriode === trigger.triggerPeriode
+                    );
+
+                    if (!trigger?.inTriggerWindow || correctPeriodExists) {
+                        // Hors fenêtre ou doublon avec un bon placeholder : supprimer l'artefact
+                        toRemoveIds.add(nullPeriodPlaceholder.id);
+                    } else {
+                        // En fenêtre et pas de bon placeholder : recycler avec les données correctes
+                        toFix.set(nullPeriodPlaceholder.id, {
+                            ...nullPeriodPlaceholder,
+                            description,
+                            depenses: ff.type === 'Dépense' ? ff.montant : 0,
+                            recettes: ff.type === 'Recette' ? ff.montant : 0,
+                            fraisFixePeriode: trigger.triggerPeriode,
+                        });
+                    }
+                    continue;
+                }
 
                 if (!trigger?.inTriggerWindow) continue;
 
@@ -296,8 +391,12 @@ function App() {
                 }
             }
 
-            if (toAdd.length === 0) return prevRows;
-            return [...toAdd, ...prevRows];
+            if (toAdd.length === 0 && toFix.size === 0 && toRemoveIds.size === 0) return prevRows;
+            let newRows = prevRows
+                .filter(r => !toRemoveIds.has(r.id))
+                .map(r => toFix.has(r.id) ? toFix.get(r.id) : r);
+            if (toAdd.length > 0) newRows = [...toAdd, ...newRows];
+            return newRows;
         });
     }, [fraisFixesRows, todayKey]);
 
@@ -567,6 +666,7 @@ function App() {
     const rowsByCompte = useMemo(() => {
         const map = {};
         rows.forEach(r => {
+            if (r.isNew) return; // exclure les lignes en cours de saisie (non encore sauvegardées)
             if (!map[r.compte]) map[r.compte] = [];
             map[r.compte].push(r);
         });
@@ -598,6 +698,7 @@ function App() {
     }
 
     return (
+        <>
         <Box sx={{ width: '100%' }}>
 
             {/* ─── StatCards + Récap (toujours visibles, même conteneur) ─────── */}
@@ -665,8 +766,8 @@ function App() {
                         messages={snackbarMessages}
                         initialSort={initialSort}
                         onFieldChange={onFieldChange}
-                        onRowsChange={setRows}
-                        onSave={saveDepenseRecette}
+                        onRowsChange={onRowsChangeDepRecNormal}
+                        onSave={onSaveDepenseRecette}
                         onDeleteConfirm={onDeleteConfirmDepenseRecette}
                         rowFilter={depensesRowFilter}
                         extraRowDefaults={{ categorie: '', sousCategorie: '' }}
@@ -692,7 +793,7 @@ function App() {
                             initialSort={compteJointInitialSort}
                             onFieldChange={compteJointOnFieldChangeBase}
                             onRowsChange={setRows}
-                            onSave={saveDepenseRecette}
+                            onSave={onSaveDepenseRecette}
                             onDeleteConfirm={onDeleteConfirmDepenseRecette}
                             rowFilter={(row) => row.compte === compteJointNom}
                             extraRowDefaults={compteJointExtraRowDefaults}
@@ -727,7 +828,7 @@ function App() {
                             <AccordionSummary expandIcon={<ExpandMoreIcon />}>
                                 {label}
                             </AccordionSummary>
-                            <AccordionDetails sx={(label === 'Comptes' || label === 'Frais fixes' || label === 'Virements internes' || label === 'Catégories') ? { p: 0 } : undefined}>
+                            <AccordionDetails sx={(label === 'Comptes' || label === 'Frais fixes' || label === 'Virements internes' || label === 'Catégories' || label === 'Notes de frais') ? { p: 0 } : undefined}>
                                 {label === 'Frais fixes' && (
                                     <FullFeaturedCrudGrid
                                         columns={fraisFixesColumns}
@@ -754,6 +855,9 @@ function App() {
                                             />
                                         }
                                     />
+                                )}
+                                {label === 'Notes de frais' && (
+                                    <PlafondNotesFrais />
                                 )}
                                 {label === 'Paramétrage' && (
                                     <Box sx={parametrageFormSx}>
@@ -942,6 +1046,12 @@ function App() {
             )}
 
         </Box>
+
+        <RemboursementDiscordanceDialog
+            info={remboursementInfo}
+            onClose={() => setRemboursementInfo(null)}
+        />
+        </>
     );
 }
 
