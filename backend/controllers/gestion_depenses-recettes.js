@@ -3,6 +3,7 @@ const { toCents } = require('../utils/utils.js');
 const depensesRecettes = require('../models/depenses-recettes.js');
 const compte = require('../models/compte.js');
 const plafondModel = require('../models/plafond-notes-frais.js');
+const categorieModel = require('../models/categorie.js');
 const { calculerDepenseReelleParCategorie } = require('../utils/plafond-utils.js');
 const dayjs = require('dayjs');
 const customParseFormat = require('dayjs/plugin/customParseFormat');
@@ -10,9 +11,6 @@ dayjs.extend(customParseFormat);
 
 // --- UTILS ---
 
-/**
- * Nettoie et formate la date à midi pour éviter les décalages TZ
- */
 const formaterDateMidi = (dateSource) => {
     if (!dateSource || String(dateSource).toLowerCase() === 'null') return null;
     let dateParsed = (dateSource instanceof Date || String(dateSource).includes('T'))
@@ -22,9 +20,6 @@ const formaterDateMidi = (dateSource) => {
     return dateParsed.isValid() ? dateParsed.startOf('day').add(12, 'hour').toDate() : null;
 };
 
-/**
- * Transforme un objet brut reçu du Front/CSV en objet conforme au schéma Mongoose
- */
 const transformerVersSchema = (data, mappingComptes = {}) => {
     const cleanData = { ...data };
     delete cleanData.id;
@@ -51,16 +46,12 @@ const transformerVersSchema = (data, mappingComptes = {}) => {
     };
 };
 
-/**
- * Prépare la réponse pour le DataGrid (ID et nom du compte).
- * Si plafondDoc est fourni, calcule depenseReelle (dépassement en €) pour les notes de frais.
- */
 const formaterPourFront = (doc, plafondDoc = null) => {
     const item = doc.toObject ? doc.toObject() : doc;
     const depensesCents = item.depenses ?? 0;
 
     let depenseReelle = null;
-    if (plafondDoc && item.noteDeFrais && depensesCents > 0 && item.dateDepensesRecettes) {
+    if (plafondDoc && (item.noteDeFrais || item.sousCategorie?.groupe === 'Frais déplacements') && depensesCents > 0 && item.dateDepensesRecettes) {
         const catNom = item.sousCategorie?.nom ?? '';
         const reelCents = calculerDepenseReelleParCategorie(depensesCents, catNom, plafondDoc, item.dateDepensesRecettes);
         if (reelCents !== null) depenseReelle = reelCents / 100;
@@ -84,16 +75,11 @@ const formaterPourFront = (doc, plafondDoc = null) => {
     return result;
 };
 
-/**
- * Préparation et validation booleen import CSV
- */
 const parseBooleen = (value) => {
     const v = String(value ?? "").toLowerCase().trim();
     return ['true', '1', 'oui', 'x', 'vrai'].includes(v);
 };
 
-// Tri commun aux endpoints dépenses/recettes et compte joint :
-// nulls en tête (chèques en cours), puis date décroissante, tiebreak alphabétique.
 const trierParDateDesc = (a, b) => {
     const dateA = a.dateDepensesRecettes;
     const dateB = b.dateDepensesRecettes;
@@ -107,14 +93,9 @@ const trierParDateDesc = (a, b) => {
     return new Date(dateB) - new Date(dateA);
 };
 
-/**
- * Résout les deux comptes d'un virement interne à partir de leurs noms.
- * Envoie la réponse d'erreur directement via res si un compte est introuvable ou si les deux sont identiques.
- * Retourne null si une erreur a été renvoyée, { sourceDoc, destDoc } sinon.
- */
-const resolveComptesVirement = async (res, compteSource, compteDestination) => {
-    const sourceDoc = await compte.findOne({ nom: compteSource });
-    const destDoc = await compte.findOne({ nom: compteDestination });
+const resolveComptesVirement = async (res, compteSource, compteDestination, userId) => {
+    const sourceDoc = await compte.findOne({ nom: compteSource, userId });
+    const destDoc = await compte.findOne({ nom: compteDestination, userId });
     if (!sourceDoc) {
         res.status(400).json({ message: `Compte source introuvable : "${compteSource}"` });
         return null;
@@ -130,12 +111,8 @@ const resolveComptesVirement = async (res, compteSource, compteDestination) => {
     return { sourceDoc, destDoc };
 };
 
-/**
- * Calcule et persiste depassementPlafond (centimes) sur une note de frais déjà populée.
- * No-op si la ligne n'est pas une note de frais ou si aucun plafond ne s'applique.
- */
 const sauvegarderDepassement = async (doc, plafondDoc) => {
-    if (!doc.noteDeFrais || !doc.depenses || !doc.dateDepensesRecettes) return;
+    if (doc.sousCategorie?.groupe !== 'Frais déplacements' || !doc.depenses || !doc.dateDepensesRecettes) return;
     const catNom = doc.sousCategorie?.nom ?? '';
     const depassementCents = calculerDepenseReelleParCategorie(doc.depenses, catNom, plafondDoc, doc.dateDepensesRecettes);
     if (depassementCents === null) return;
@@ -149,12 +126,13 @@ exports.dataGridDepensesRecettes = async (req, res) => {
     try {
         const [data, plafondDoc] = await Promise.all([
             depensesRecettes.find({
+                userId: req.userId,
                 virementInterne: { $ne: true },
             }).populate({
                 path: 'compte',
                 match: { archive: { $ne: true }, estCompteJoint: { $ne: true } }
             }).populate('sousCategorie'),
-            plafondModel.findOne(),
+            plafondModel.findOne({ userId: req.userId }),
         ]);
 
         const dataFiltree = data.filter(d => d.compte !== null);
@@ -169,18 +147,18 @@ exports.dataGridDepensesRecettes = async (req, res) => {
 
 exports.ajoutDepenseRecette = async (req, res) => {
     try {
-        const compteDoc = await compte.findOne({ nom: req.body.compte });
+        const compteDoc = await compte.findOne({ nom: req.body.compte, userId: req.userId });
         if (req.body.compte && !compteDoc) {
             return res.status(400).json({ message: `Le compte "${req.body.compte}" est introuvable.` });
         }
 
         const dataPrepared = transformerVersSchema({ ...req.body, compteId: compteDoc?._id });
-        const nouvelleLigne = await new depensesRecettes(dataPrepared).save();
+        const nouvelleLigne = await new depensesRecettes({ ...dataPrepared, userId: req.userId }).save();
 
         await nouvelleLigne.populate('compte');
         await nouvelleLigne.populate('sousCategorie');
 
-        const plafondDoc = await plafondModel.findOne();
+        const plafondDoc = await plafondModel.findOne({ userId: req.userId });
         await sauvegarderDepassement(nouvelleLigne, plafondDoc);
         res.status(201).json(formaterPourFront(nouvelleLigne, plafondDoc));
     } catch (error) {
@@ -190,16 +168,16 @@ exports.ajoutDepenseRecette = async (req, res) => {
 
 exports.modificationDepenseRecette = async (req, res) => {
     try {
-        const compteDoc = await compte.findOne({ nom: req.body.compte });
+        const compteDoc = await compte.findOne({ nom: req.body.compte, userId: req.userId });
         const dataPrepared = transformerVersSchema({ ...req.body, compteId: compteDoc?._id });
 
-        const updatedDoc = await depensesRecettes.findByIdAndUpdate(
-            req.body.id,
+        const updatedDoc = await depensesRecettes.findOneAndUpdate(
+            { _id: req.body.id, userId: req.userId },
             { $set: dataPrepared },
             { returnDocument: 'after' }
         ).populate('compte').populate('sousCategorie');
 
-        const plafondDoc = await plafondModel.findOne();
+        const plafondDoc = await plafondModel.findOne({ userId: req.userId });
         await sauvegarderDepassement(updatedDoc, plafondDoc);
         res.status(200).json(formaterPourFront(updatedDoc, plafondDoc));
     } catch (error) {
@@ -215,7 +193,7 @@ exports.ajoutDepenseRecetteBulk = async (req, res) => {
         const erreurs = [];
         const nomsComptesUnique = [...new Set(lignesRecues.map(l => l.compte))].filter(n => n);
 
-        const comptesDocs = await compte.find({ nom: { $in: nomsComptesUnique } });
+        const comptesDocs = await compte.find({ nom: { $in: nomsComptesUnique }, userId: req.userId });
         const mappingComptes = {};
         comptesDocs.forEach(c => mappingComptes[c.nom] = c._id);
 
@@ -223,36 +201,30 @@ exports.ajoutDepenseRecetteBulk = async (req, res) => {
 
         lignesRecues.forEach((data, index) => {
             const numeroLigne = index + 2;
-            const rowErrors = []; // On utilise ce tableau pour collecter les erreurs de la ligne
+            const rowErrors = [];
 
-            // 1. Validation Compte
             if (!data.compte || !mappingComptes[data.compte]) {
                 rowErrors.push(`Compte inconnu : "${data.compte || 'VIDE'}"`);
             }
 
-            // 2. Validation Description
             if (!data.description || String(data.description).trim() === "") {
                 rowErrors.push("Description manquante");
             }
 
-            // 3. Validation Montants
             const d = toCents(data.depenses);
             const r = toCents(data.recettes);
             if (d === 0 && r === 0) rowErrors.push("Dépense et Recette sont à 0");
             if (d > 0 && r > 0) rowErrors.push("Une ligne ne peut pas être à la fois une dépense et une recette");
 
-            // 4. Validation Dates & Chèque en cours (LOGIQUE FUSIONNÉE)
             const dateBrute = data.dateDepensesRecettes;
             const dateValide = formaterDateMidi(dateBrute);
             const isCheque = !!(data.chequeEnCours === '1' || data.chequeEnCours === true || data.chequeEnCours === 'true' || data.chequeEnCours === 1);
 
             if (isCheque) {
-                // RÈGLE : Si chèque, la date DOIT être vide
                 if (dateBrute && dateBrute !== "" && dateBrute !== null) {
                     rowErrors.push("Un chèque en cours ne peut pas avoir de date d'opération");
                 }
             } else {
-                // RÈGLE : Si pas chèque, la date DOIT être valide
                 if (!dateValide) {
                     rowErrors.push("Date manquante ou invalide");
                 }
@@ -260,9 +232,7 @@ exports.ajoutDepenseRecetteBulk = async (req, res) => {
 
             const compteDoc = comptesDocs.find(c => c.nom === data.compte);
 
-            // 5. Validation booléens
             const valeursBooleensValides = ['true', 'false', '1', '0', 'oui', 'non', 'x', 'vrai'];
-
             const champsAValider = compteDoc?.estCompteJoint
                 ? ['fraisFixe', 'chequeEnCours', 'depenseRecettesAMasquer']
                 : ['fraisFixe', 'chequeEnCours', 'depenseRecettesAMasquer', 'noteDeFrais', 'notesFraisRemboursee'];
@@ -274,7 +244,6 @@ exports.ajoutDepenseRecetteBulk = async (req, res) => {
                 }
             });
 
-            // 6. Validation parts (compte joint uniquement — si présent)
             if (compteDoc?.estCompteJoint) {
                 if (data.parts_0 === undefined || data.parts_0 === null || data.parts_0 === "") {
                     rowErrors.push(`% manquant : la colonne parts est obligatoire pour le compte joint`);
@@ -286,16 +255,14 @@ exports.ajoutDepenseRecetteBulk = async (req, res) => {
                 }
             }
 
-            // 7. Finalisation de la ligne
             if (rowErrors.length > 0) {
                 erreurs.push(`Ligne ${numeroLigne}: ${rowErrors.join(', ')}`);
             } else {
-                lignesValidees.push(transformerVersSchema(data, mappingComptes));
+                lignesValidees.push({ ...transformerVersSchema(data, mappingComptes), userId: req.userId });
             }
         });
 
         if (erreurs.length > 0) {
-            // C'est ce retour qui déclenche la Snackbar sur le Front
             return res.status(400).json({
                 message: "Erreurs de validation dans le fichier",
                 details: erreurs
@@ -315,7 +282,7 @@ exports.ajoutDepenseRecetteBulk = async (req, res) => {
 
 exports.suppressionDepenseRecette = async (req, res, next) => {
     try {
-        await depensesRecettes.deleteOne({ _id: req.body.id });
+        await depensesRecettes.deleteOne({ _id: req.body.id, userId: req.userId });
         res.status(200).json({ message: 'Objet supprimé !' });
     } catch (error) {
         res.status(400).json({ error });
@@ -326,12 +293,13 @@ exports.dataGridCompteJoint = async (req, res) => {
     try {
         const [data, plafondDoc] = await Promise.all([
             depensesRecettes.find({
+                userId: req.userId,
                 virementInterne: { $ne: true },
             }).populate({
                 path: 'compte',
                 match: { estCompteJoint: true }
             }).populate('sousCategorie'),
-            plafondModel.findOne(),
+            plafondModel.findOne({ userId: req.userId }),
         ]);
 
         const dataFiltree = data.filter(d => d.compte !== null);
@@ -347,10 +315,6 @@ exports.dataGridCompteJoint = async (req, res) => {
 // VIREMENTS INTERNES
 // ============================================================
 
-/**
- * Prépare la réponse virement pour le DataGrid
- * (populate des deux comptes source et destination)
- */
 const formaterVirementPourFront = (doc) => {
     const item = doc.toObject ? doc.toObject() : doc;
     return {
@@ -363,11 +327,10 @@ const formaterVirementPourFront = (doc) => {
     };
 };
 
-// Liste tous les virements internes
 exports.listeVirements = async (req, res) => {
     try {
         const data = await depensesRecettes
-            .find({ virementInterne: true })
+            .find({ userId: req.userId, virementInterne: true })
             .populate('compte')
             .populate('compteDestination')
             .sort({ dateDepensesRecettes: -1 });
@@ -378,16 +341,16 @@ exports.listeVirements = async (req, res) => {
     }
 };
 
-// Création d'un virement interne
 exports.ajoutVirement = async (req, res) => {
     try {
         const { compteSource, compteDestination, montant, dateVirement } = req.body;
 
-        const comptes = await resolveComptesVirement(res, compteSource, compteDestination);
+        const comptes = await resolveComptesVirement(res, compteSource, compteDestination, req.userId);
         if (!comptes) return;
         const { sourceDoc: compteSourceDoc, destDoc: compteDestDoc } = comptes;
 
         const doc = await new depensesRecettes({
+            userId: req.userId,
             compte: compteSourceDoc._id,
             compteDestination: compteDestDoc._id,
             dateDepensesRecettes: formaterDateMidi(dateVirement),
@@ -406,17 +369,16 @@ exports.ajoutVirement = async (req, res) => {
     }
 };
 
-// Modification d'un virement interne
 exports.modificationVirement = async (req, res) => {
     try {
         const { id, compteSource, compteDestination, montant, dateVirement } = req.body;
 
-        const comptes = await resolveComptesVirement(res, compteSource, compteDestination);
+        const comptes = await resolveComptesVirement(res, compteSource, compteDestination, req.userId);
         if (!comptes) return;
         const { sourceDoc: compteSourceDoc, destDoc: compteDestDoc } = comptes;
 
-        const doc = await depensesRecettes.findByIdAndUpdate(
-            id,
+        const doc = await depensesRecettes.findOneAndUpdate(
+            { _id: id, userId: req.userId },
             {
                 $set: {
                     compte: compteSourceDoc._id,
@@ -434,10 +396,9 @@ exports.modificationVirement = async (req, res) => {
     }
 };
 
-// Suppression d'un virement interne
 exports.suppressionVirement = async (req, res) => {
     try {
-        await depensesRecettes.deleteOne({ _id: req.body.id, virementInterne: true });
+        await depensesRecettes.deleteOne({ _id: req.body.id, userId: req.userId, virementInterne: true });
         res.status(200).json({ message: 'Virement supprimé !' });
     } catch (error) {
         res.status(400).json({ error: error.message });
@@ -453,10 +414,11 @@ exports.rembourserNotesFrais = async (req, res) => {
         const { sousCategorieId } = req.body;
         if (!sousCategorieId) return res.status(400).json({ message: 'sousCategorieId requis' });
 
-        const plafondDoc = await plafondModel.findOne();
+        const plafondDoc = await plafondModel.findOne({ userId: req.userId });
 
-        // Remboursable (centimes) ou null si la catégorie n'est pas reconnue par un plafond.
-        // null = note sans catégorie plafond valide (anciennes notes sans sous-catégorie).
+        const fraisDeplacementsCats = await categorieModel.find({ userId: req.userId, groupe: 'Frais déplacements' });
+        const fraisDeplacementsIds = fraisDeplacementsCats.map(c => c._id);
+
         const remboursableOuNull = (note) => {
             if (note.depassementPlafond != null) return note.depenses - note.depassementPlafond;
             const catNom = note.sousCategorie?.nom ?? '';
@@ -465,11 +427,10 @@ exports.rembourserNotesFrais = async (req, res) => {
             return note.depenses - dep;
         };
 
-        // Pour le marquage des nouvelles notes : si aucun plafond applicable, traiter comme entièrement remboursable.
         const montantRembBoursable = (note) => remboursableOuNull(note) ?? note.depenses;
 
-        // 1. Total des remboursements reçus pour cette catégorie (comptes perso)
         const remboursementsRecus = await depensesRecettes.find({
+            userId: req.userId,
             sousCategorie: sousCategorieId,
             recettes: { $gt: 0 },
             virementInterne: { $ne: true },
@@ -479,27 +440,23 @@ exports.rembourserNotesFrais = async (req, res) => {
             .filter(r => r.compte !== null)
             .reduce((acc, r) => acc + (r.recettes || 0), 0);
 
-        // 2. Total déjà couvert par les notes déjà marquées remboursées (comptes perso)
         const notesDejaMarquees = await depensesRecettes.find({
-            noteDeFrais: true,
+            userId: req.userId,
+            sousCategorie: { $in: fraisDeplacementsIds },
             rembourser: true,
             virementInterne: { $ne: true },
         }).populate({ path: 'compte', match: { archive: { $ne: true }, estCompteJoint: { $ne: true } } })
           .populate('sousCategorie');
 
-        // N'inclure dans totalAppliqué que les notes avec une catégorie plafond reconnue.
-        // Les 815+ anciennes notes sans catégorie (rembourser:true, sousCategorie:null) sont ignorées :
-        // elles auraient sinon gonflé totalAppliqué jusqu'à rendre le solde toujours négatif.
         const totalAppliqueCents = notesDejaMarquees
             .filter(n => n.compte !== null)
             .reduce((acc, n) => acc + (remboursableOuNull(n) ?? 0), 0);
 
-        // 3. Solde disponible pour couvrir de nouvelles notes (cumul)
         let restantCents = totalRecuCents - totalAppliqueCents;
 
-        // 4. Notes de frais non remboursées (comptes perso), triées date ASC
         const toutes = await depensesRecettes.find({
-            noteDeFrais: true,
+            userId: req.userId,
+            sousCategorie: { $in: fraisDeplacementsIds },
             rembourser: { $ne: true },
             virementInterne: { $ne: true },
         }).populate({ path: 'compte', match: { archive: { $ne: true }, estCompteJoint: { $ne: true } } })
@@ -528,7 +485,7 @@ exports.rembourserNotesFrais = async (req, res) => {
 
         if (idsAMarquer.length > 0) {
             await depensesRecettes.updateMany(
-                { _id: { $in: idsAMarquer } },
+                { _id: { $in: idsAMarquer }, userId: req.userId },
                 { $set: { rembourser: true } }
             );
         }
@@ -538,7 +495,6 @@ exports.rembourserNotesFrais = async (req, res) => {
             : [];
         const updatedFormatted = updatedDocs.map(d => formaterPourFront(d, plafondDoc));
 
-        // Discordance : solde restant après marquage
         let discordance = null;
         if (restantCents > 0) {
             const notesRestantes = notesFrais.filter(n => !idsAMarquer.some(id => id.equals(n._id)));
@@ -547,7 +503,7 @@ exports.rembourserNotesFrais = async (req, res) => {
                 const prochaineRemb = montantRembBoursable(prochaine);
                 discordance = {
                     type: 'insuffisant',
-                    manque: (prochaineRemb - restantCents) / 100, // combien il manque pour couvrir la prochaine
+                    manque: (prochaineRemb - restantCents) / 100,
                     notesRestantes: notesRestantes.map(n => ({
                         description: n.description,
                         date: n.dateDepensesRecettes,
@@ -565,7 +521,6 @@ exports.rembourserNotesFrais = async (req, res) => {
     }
 };
 
-// AJOUT virement depuis CSV
 exports.ajoutVirementsBulk = async (req, res) => {
     try {
         const lignesRecues = req.body;
@@ -577,7 +532,7 @@ exports.ajoutVirementsBulk = async (req, res) => {
             ...lignesRecues.map(l => l.compteDestination)
         ])].filter(n => n);
 
-        const comptesDocs = await compte.find({ nom: { $in: nomsComptes } });
+        const comptesDocs = await compte.find({ nom: { $in: nomsComptes }, userId: req.userId });
         const mappingComptes = {};
         comptesDocs.forEach(c => mappingComptes[c.nom] = c._id);
 
@@ -608,6 +563,7 @@ exports.ajoutVirementsBulk = async (req, res) => {
                 erreurs.push(`Ligne ${numeroLigne}: ${rowErrors.join(', ')}`);
             } else {
                 lignesValidees.push({
+                    userId: req.userId,
                     compte: mappingComptes[data.compteSource],
                     compteDestination: mappingComptes[data.compteDestination],
                     dateDepensesRecettes: dateValide,

@@ -1,4 +1,4 @@
-import { API_BASE, post } from './client.js';
+import { get, post } from './client.js';
 
 // Mapping Backend → Frontend
 const fromApi = (c) => ({
@@ -28,9 +28,8 @@ const toApi = (row) => ({
 });
 
 export const fetchComptes = async () => {
-    const res = await fetch(`${API_BASE}/tableau-liste-comptes`);
-    if (!res.ok) throw new Error('Erreur chargement comptes');
-    return (await res.json()).map(fromApi);
+    const data = await get('/tableau-liste-comptes');
+    return data.map(fromApi);
 };
 
 export const saveCompte = async (row, isNew) => {

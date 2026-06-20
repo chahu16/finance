@@ -6,6 +6,7 @@ const entreePlafondSchema = new mongoose.Schema({
 }, { _id: true, timestamps: true });
 
 const plafondNotesFraisSchema = new mongoose.Schema({
+    userId: { type: mongoose.Schema.Types.ObjectId, index: true },
     repas: { type: [entreePlafondSchema], default: [] }, // midi + soir
     hotelPDJ: { type: [entreePlafondSchema], default: [] }, // hôtel + petit déjeuner
     soireeEtape: { type: [entreePlafondSchema], default: [] }, // soirée étape

@@ -50,9 +50,10 @@ function buildChartData(rows, compteJointNom, pourcentageDefaut) {
         const rec = (row.recettes ?? 0) * pct;
 
         if (dep > 0) {
-            if (row.noteDeFrais) {
-                const depNF = row.depenseReelle != null ? row.depenseReelle * pct : dep;
-                buckets[key].notesDeFrais += depNF;
+            if (row.noteDeFrais || row.categorie === 'Frais déplacements') {
+                const depassement = (row.depassementPlafond ?? row.depenseReelle ?? 0) * pct;
+                buckets[key].notesDeFrais += Math.max(0, dep - depassement);
+                if (depassement > 0) buckets[key].depenses += depassement;
             } else if (row.fraisFixe) {
                 buckets[key].fraisFixes += dep;
             } else {

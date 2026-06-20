@@ -155,7 +155,7 @@ function parseCSVValue(value, type) {
 }
 
 // ─── Barre d'outils avec bouton Ajouter ───────────────────────────────────────
-function EditToolbar({ setRows, setRowModesModel, addButtonLabel, emptyRow, fieldFocusAdd, isAnyRowEditing, setShowErrors, customColumns, validateRow, showSnackbar, toolbarSlotEnd }) {
+function EditToolbar({ setRows, setRowModesModel, addButtonLabel, emptyRow, fieldFocusAdd, isAnyRowEditing, setShowErrors, customColumns, validateRow, showSnackbar, toolbarSlotEnd, showImport }) {
     const apiRef = useGridApiContext();
     const fileInputRef = React.useRef(null);
     const [errorDialog, setErrorDialog] = React.useState({ open: false, rows: [], imported: 0 });
@@ -306,6 +306,7 @@ function EditToolbar({ setRows, setRowModesModel, addButtonLabel, emptyRow, fiel
                 >
                     {addButtonLabel || 'Ajouter'}
                 </Button>
+                {showImport && (
                 <Button
                     color="primary"
                     variant="outlined"
@@ -317,6 +318,7 @@ function EditToolbar({ setRows, setRowModesModel, addButtonLabel, emptyRow, fiel
                 >
                     Importer CSV
                 </Button>
+                )}
                 {toolbarSlotEnd}
             </GridToolbarContainer>
         </>
@@ -341,6 +343,7 @@ export default function FullFeaturedCrudGrid({
     extraRowDefaults = {},
     rowFilter = null,
     toolbarSlotEnd = null,
+    showImport = false,
     resolveDelete = null,
     onSave = null,
     onDeleteConfirm = null,
@@ -851,7 +854,7 @@ export default function FullFeaturedCrudGrid({
                 showToolbar
                 slots={{ toolbar: EditToolbar }}
                 slotProps={{
-                    toolbar: { setRows, setRowModesModel, addButtonLabel, emptyRow, fieldFocusAdd, isAnyRowEditing, setShowErrors, customColumns, validateRow, showSnackbar, toolbarSlotEnd },
+                    toolbar: { setRows, setRowModesModel, addButtonLabel, emptyRow, fieldFocusAdd, isAnyRowEditing, setShowErrors, customColumns, validateRow, showSnackbar, toolbarSlotEnd, showImport },
                 }}
             />
 

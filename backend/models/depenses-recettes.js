@@ -1,12 +1,7 @@
 const mongoose = require('mongoose');
 
 const depensesRecettesSchema = mongoose.Schema({
-    // On lie à la collection 'users' (le nom doit correspondre à ton modèle User)
-    /*utilisateur: {
-        type: mongoose.Schema.Types.ObjectId,
-        ref: 'User',
-        required: true
-    },*/
+    userId: { type: mongoose.Schema.Types.ObjectId, index: true },
     // On liera à la nouvelle collection 'Compte'
     compte: {
         type: mongoose.Schema.Types.ObjectId,

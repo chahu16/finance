@@ -1,7 +1,7 @@
 const mongoose = require('mongoose');
 
 const comptesSchema = mongoose.Schema({
-    /*utilisateur: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },*/
+    userId: { type: mongoose.Schema.Types.ObjectId, index: true },
     archive: { type: Boolean, default: false },
     nom: { type: String, required: true },
     soldeInitial: { type: Number, default: 0 },

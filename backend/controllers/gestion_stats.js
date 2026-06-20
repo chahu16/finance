@@ -12,15 +12,17 @@ exports.statsMensuelles = async (req, res) => {
 
         // Lignes normales (hors compte joint)
         const dataNormales = await depensesRecettes.find({
+            userId: req.userId,
             virementInterne: { $ne: true },
             dateDepensesRecettes: { $gte: debut, $lte: fin }
-        }).populate({ path: 'compte', match: { estCompteJoint: { $ne: true } } });
+        }).populate({ path: 'compte', match: { estCompteJoint: { $ne: true } } }).populate('sousCategorie');
 
         // Lignes compte joint
         const dataCompteJoint = await depensesRecettes.find({
+            userId: req.userId,
             virementInterne: { $ne: true },
             dateDepensesRecettes: { $gte: debut, $lte: fin }
-        }).populate({ path: 'compte', match: { estCompteJoint: true } });
+        }).populate({ path: 'compte', match: { estCompteJoint: true } }).populate('sousCategorie');
 
         const data = [
             ...dataNormales.filter(d => d.compte !== null),
@@ -55,8 +57,8 @@ exports.statsMensuelles = async (req, res) => {
             const recette = (row.recettes ?? 0) / 100;
             const desc = (row.description ?? "").toLowerCase();
 
-            // Barres oranges — notes de frais
-            if (row.noteDeFrais) {
+            // Barres oranges — notes de frais (ancien flag ou catégorie Frais déplacements)
+            if (row.noteDeFrais || row.sousCategorie?.groupe === 'Frais déplacements') {
                 bucket.notesFrais += depense;
                 return;
             }
@@ -68,7 +70,7 @@ exports.statsMensuelles = async (req, res) => {
             }
 
             // Barres bleues — dépenses hors masquées
-            if (!row.depenseRecettesAMasquer && !row.noteDeFrais && depense > 0) {
+            if (!row.depenseRecettesAMasquer && depense > 0) {
                 if (row.fraisFixe) {
                     bucket.fraisFixe += depense;
                 } else {

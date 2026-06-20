@@ -1,4 +1,4 @@
-import { API_BASE, formatDate, post } from './client.js';
+import { formatDate, get, post } from './client.js';
 
 // Mapping Backend → Frontend
 // rembourser     → notesFraisRemboursee
@@ -32,7 +32,6 @@ const toApi = (row) => ({
     description: row.description,
     depenses: row.depenses ?? 0,
     recettes: row.recettes ?? 0,
-    noteDeFrais: !!row.noteDeFrais,
     notesFraisRemboursee: !!row.notesFraisRemboursee,
     fraisFixe: !!row.fraisFixe,
     chequeEnCours: !!row.chequeEnCours,
@@ -49,13 +48,10 @@ const toApi = (row) => ({
 // Les deux endpoints (comptes normaux + compte joint) sont chargés en parallèle
 // et fusionnés dans le même état rows.
 export const fetchDepensesRecettes = async () => {
-    const [resNormal, resJoint] = await Promise.all([
-        fetch(`${API_BASE}/liste-depenses-recettes`),
-        fetch(`${API_BASE}/liste-compte-joint`),
+    const [normal, joint] = await Promise.all([
+        get('/liste-depenses-recettes'),
+        get('/liste-compte-joint'),
     ]);
-    if (!resNormal.ok) throw new Error('Erreur chargement dépenses/recettes');
-    if (!resJoint.ok) throw new Error('Erreur chargement compte joint');
-    const [normal, joint] = await Promise.all([resNormal.json(), resJoint.json()]);
     return [...normal, ...joint].map(fromApi);
 };
 

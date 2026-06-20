@@ -63,14 +63,6 @@ export const CompteJointColumns = [
         valueOptions: [], // injecté dynamiquement depuis App.js (toutes sous-catégories du type)
     },
     {
-        field: 'fraisFixe',
-        headerName: 'Frais fixe',
-        type: 'boolean',
-        width: 100,
-        editable: true,
-        align: 'center',
-    },
-    {
         field: 'chequeEnCours',
         headerName: 'Chèque en cours',
         type: 'boolean',

@@ -1,4 +1,4 @@
-import { API_BASE, formatDate, post } from './client.js';
+import { formatDate, get, post } from './client.js';
 
 const fromApi = (doc) => ({
     id: doc.id,
@@ -17,9 +17,8 @@ const toApi = (row) => ({
 });
 
 export const fetchVirementInternes = async () => {
-    const res = await fetch(`${API_BASE}/liste-virements-internes`);
-    if (!res.ok) throw new Error('Erreur chargement virements internes');
-    return (await res.json()).map(fromApi);
+    const data = await get('/liste-virements-internes');
+    return data.map(fromApi);
 };
 
 export const saveVirementInterne = async (row, isNew) => {

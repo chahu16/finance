@@ -1,7 +1,7 @@
 const mongoose = require('mongoose');
 
 const comptesFraisFixe = mongoose.Schema({
-    /*utilisateur: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },*/
+    userId: { type: mongoose.Schema.Types.ObjectId, index: true },
     compte: {
         type: mongoose.Schema.Types.ObjectId,
         ref: 'liste-comptes',

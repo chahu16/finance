@@ -1,9 +1,7 @@
-import { API_BASE, post } from './client.js';
+import { get, post } from './client.js';
 
 export const fetchPlafonds = async () => {
-    const res = await fetch(`${API_BASE}/liste-plafonds-notes-frais`);
-    if (!res.ok) throw new Error('Erreur chargement plafonds');
-    return res.json(); // { repas: [...], hotelPDJ: [...], soireeEtape: [...] }
+    return get('/liste-plafonds-notes-frais');
 };
 
 export const ajouterPlafond = async (type, montantMax, dateEffet) => {

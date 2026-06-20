@@ -1,4 +1,4 @@
-import { API_BASE, post } from './client.js';
+import { get, post } from './client.js';
 
 // Normalise periodicite quel que soit la casse stockée en base
 const PERIODICITE_MAP = {
@@ -73,9 +73,8 @@ const toApi = (row) => {
 };
 
 export const fetchFraisFixes = async () => {
-    const res = await fetch(`${API_BASE}/liste-frais-fixe`);
-    if (!res.ok) throw new Error('Erreur chargement frais fixes');
-    return (await res.json()).map(fromApi);
+    const data = await get('/liste-frais-fixe');
+    return data.map(fromApi);
 };
 
 export const saveFraisFixe = async (row, isNew) => {

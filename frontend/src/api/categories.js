@@ -1,9 +1,7 @@
-import { API_BASE, post } from './client.js';
+import { get, post } from './client.js';
 
 export const fetchCategories = async () => {
-    const res = await fetch(`${API_BASE}/liste-categories`);
-    if (!res.ok) throw new Error('Erreur chargement catégories');
-    return await res.json();
+    return get('/liste-categories');
 };
 
 export const saveCategorie = async (row, isNew) => {

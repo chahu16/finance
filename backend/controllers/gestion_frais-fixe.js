@@ -4,27 +4,16 @@ const dayjs = require('dayjs');
 
 // --- UTILS ---
 
-/**
- * Calcule la dateEffet à partir de la dateFraisFixe :
- * on prend le jour de dateFraisFixe et on le place dans le mois en cours
- */
 const parseDate = (valeur) => {
     if (!valeur) return null;
-
-    // Déjà un objet Date ou dayjs
     if (valeur instanceof Date) return dayjs(valeur);
-
     const str = String(valeur).trim();
-
-    // Format JJ/MM/AAAA ou JJ/MM/AA
     const matchFr = str.match(/^(\d{1,2})\/(\d{1,2})\/(\d{2,4})$/);
     if (matchFr) {
         const [, jour, mois, annee] = matchFr;
         const anneeComplete = annee.length === 2 ? `20${annee}` : annee;
         return dayjs(`${anneeComplete}-${mois.padStart(2, '0')}-${jour.padStart(2, '0')}`);
     }
-
-    // Format ISO ou autre reconnu par dayjs
     return dayjs(str);
 };
 
@@ -41,18 +30,13 @@ const arraysEqual = (a, b) => {
     return a.every((v, i) => v === b[i]);
 };
 
-/**
- * Retourne l'entrée active (montant, montantMensuel, parts) — la plus récente dont la dateEffet est passée.
- */
 const getEntreeActive = (montants = []) => {
     if (!montants.length) return { montant: 0, montantMensuel: null, parts: null };
-
     const now = new Date();
     const passes = montants
         .filter(m => m.dateEffet && new Date(m.dateEffet) <= now)
         .sort((a, b) => new Date(b.dateEffet) - new Date(a.dateEffet));
     const entree = passes.length ? passes[0] : montants[montants.length - 1];
-
     return {
         montant: entree.montant / 100,
         montantMensuel: entree.montantMensuel != null ? entree.montantMensuel / 100 : null,
@@ -60,9 +44,6 @@ const getEntreeActive = (montants = []) => {
     };
 };
 
-/**
- * Formate un frais fixe pour le front
- */
 const formaterPourFront = (doc) => {
     const item = doc.toObject ? doc.toObject() : doc;
     const entreeActive = getEntreeActive(item.montants);
@@ -92,7 +73,7 @@ const formaterPourFront = (doc) => {
 
 exports.listeFraisFixes = async (req, res) => {
     try {
-        const data = await fraisFixe.find().populate('compte').populate('sousCategorie');
+        const data = await fraisFixe.find({ userId: req.userId }).populate('compte').populate('sousCategorie');
         data.sort((a, b) => {
             const dayA = a.dateFraisFixe ? new Date(a.dateFraisFixe).getDate() : 0;
             const dayB = b.dateFraisFixe ? new Date(b.dateFraisFixe).getDate() : 0;
@@ -108,13 +89,14 @@ exports.ajoutFraisFixes = async (req, res) => {
     try {
         const { compte: nomCompte, description, dateFraisFixe, periodicite, type, montant, montantMensuel, parts, sousCategorie } = req.body;
 
-        const compteDoc = await compte.findOne({ nom: nomCompte });
+        const compteDoc = await compte.findOne({ nom: nomCompte, userId: req.userId });
         if (!compteDoc) return res.status(400).json({ message: `Compte introuvable : "${nomCompte}"` });
 
         const dateEffet = calculerDateEffet(dateFraisFixe);
-
         const partsNormaux = Array.isArray(parts) ? parts : [50, 50];
+
         const doc = await new fraisFixe({
+            userId: req.userId,
             compte: compteDoc._id,
             dateFraisFixe,
             description,
@@ -142,11 +124,10 @@ exports.modificationFraisFixes = async (req, res) => {
     try {
         const { id, compte: nomCompte, dateFraisFixe, description, periodicite, type, montant, montantMensuel, parts, sousCategorie } = req.body;
 
-        const compteDoc = await compte.findOne({ nom: nomCompte });
+        const compteDoc = await compte.findOne({ nom: nomCompte, userId: req.userId });
         if (!compteDoc) return res.status(400).json({ message: `Compte introuvable : "${nomCompte}"` });
 
-        // On récupère le doc actuel pour comparer
-        const docActuel = await fraisFixe.findById(id);
+        const docActuel = await fraisFixe.findOne({ _id: id, userId: req.userId });
         if (!docActuel) return res.status(404).json({ message: 'Frais fixe introuvable' });
 
         const entreeActive = getEntreeActive(docActuel.montants);
@@ -157,12 +138,10 @@ exports.modificationFraisFixes = async (req, res) => {
         const partsOntChange = !arraysEqual(partsNouveaux, entreeActive.parts);
         const dateAChange = dayjs(dateFraisFixe).toISOString() !== dayjs(docActuel.dateFraisFixe).toISOString();
 
-        // Calcul de la dateEffet selon ce qui a changé
         const dateEffet = dateAChange
             ? dayjs(dateFraisFixe).startOf('day').add(12, 'hour').toDate()
             : calculerDateEffet(docActuel.dateFraisFixe);
 
-        // On push dans montants uniquement si montant, parts ou date a changé
         const updateQuery = {
             $set: {
                 compte: compteDoc._id,
@@ -186,7 +165,7 @@ exports.modificationFraisFixes = async (req, res) => {
         }
 
         const doc = await fraisFixe
-            .findByIdAndUpdate(id, updateQuery, { returnDocument: 'after' })
+            .findOneAndUpdate({ _id: id, userId: req.userId }, updateQuery, { returnDocument: 'after' })
             .populate('compte')
             .populate('sousCategorie');
 
@@ -198,7 +177,7 @@ exports.modificationFraisFixes = async (req, res) => {
 
 exports.suppressionFraisFixes = async (req, res) => {
     try {
-        await fraisFixe.deleteOne({ _id: req.body.id });
+        await fraisFixe.deleteOne({ _id: req.body.id, userId: req.userId });
         res.status(200).json({ message: 'Frais fixe supprimé !' });
     } catch (error) {
         res.status(400).json({ error: error.message });
@@ -207,8 +186,8 @@ exports.suppressionFraisFixes = async (req, res) => {
 
 exports.archiverFraisFixes = async (req, res) => {
     try {
-        const doc = await fraisFixe.findByIdAndUpdate(
-            req.body.id,
+        const doc = await fraisFixe.findOneAndUpdate(
+            { _id: req.body.id, userId: req.userId },
             { $set: { archive: !!req.body.archive } },
             { returnDocument: 'after' }
         ).populate('compte').populate('sousCategorie');
@@ -224,10 +203,8 @@ exports.ajoutFraisFixesBulk = async (req, res) => {
         if (!Array.isArray(lignesRecues)) throw new Error("Format tableau attendu");
 
         const erreurs = [];
-
-        // Récupération des comptes en une seule requête
         const nomsComptesUnique = [...new Set(lignesRecues.map(l => l.compte))].filter(n => n);
-        const comptesDocs = await compte.find({ nom: { $in: nomsComptesUnique } });
+        const comptesDocs = await compte.find({ nom: { $in: nomsComptesUnique }, userId: req.userId });
         const mappingComptes = {};
         comptesDocs.forEach(c => mappingComptes[c.nom] = c._id);
 
@@ -237,33 +214,22 @@ exports.ajoutFraisFixesBulk = async (req, res) => {
             const numeroLigne = index + 2;
             const rowErrors = [];
 
-            // 1. Validation Compte
-            if (!data.compte || !mappingComptes[data.compte]) {
+            if (!data.compte || !mappingComptes[data.compte])
                 rowErrors.push(`Compte inconnu : "${data.compte || 'VIDE'}"`);
-            }
 
-            // 2. Validation Description
-            if (!data.description || String(data.description).trim() === "") {
+            if (!data.description || String(data.description).trim() === "")
                 rowErrors.push("Description manquante");
-            }
 
-            // 3. Validation Type
-            if (!data.type || !['depense', 'recette'].includes(String(data.type).toLowerCase())) {
+            if (!data.type || !['depense', 'recette'].includes(String(data.type).toLowerCase()))
                 rowErrors.push(`Type invalide : "${data.type || 'VIDE'}" (attendu: depense ou recette)`);
-            }
 
-            // 4. Validation Montant
             const montant = parseFloat(String(data.montant || "").replace(',', '.'));
-            if (isNaN(montant) || montant <= 0) {
+            if (isNaN(montant) || montant <= 0)
                 rowErrors.push("Montant manquant ou invalide (doit être > 0)");
-            }
 
-            // 5. Validation Date
-            if (!data.dateFraisFixe || data.dateFraisFixe === "") {
+            if (!data.dateFraisFixe || data.dateFraisFixe === "")
                 rowErrors.push("Date de prélèvement manquante");
-            }
 
-            // 6. Finalisation
             if (rowErrors.length > 0) {
                 erreurs.push(`Ligne ${numeroLigne}: ${rowErrors.join(', ')}`);
             } else {
@@ -275,7 +241,9 @@ exports.ajoutFraisFixesBulk = async (req, res) => {
                 const partsBulkNormaux = partsBulk.length >= 2 ? partsBulk : [50, 50];
                 const montantMensuelBulk = data.montantMensuel != null ? parseFloat(String(data.montantMensuel).replace(',', '.')) : null;
                 const montantMensuelCentimes = montantMensuelBulk != null && !isNaN(montantMensuelBulk) ? Math.round(montantMensuelBulk * 100) : null;
+
                 lignesValidees.push({
+                    userId: req.userId,
                     compte: mappingComptes[data.compte],
                     description: String(data.description).trim(),
                     dateFraisFixe: dateParsee,

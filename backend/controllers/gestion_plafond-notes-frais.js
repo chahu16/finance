@@ -3,21 +3,14 @@ const { toCents } = require('../utils/utils.js');
 
 const TYPES_VALIDES = ['repas', 'hotelPDJ', 'soireeEtape'];
 
-/**
- * Retourne le document unique (ou le crée s'il n'existe pas encore)
- */
-const getOuCreerDoc = async () => {
-    let doc = await plafond.findOne();
+const getOuCreerDoc = async (userId) => {
+    let doc = await plafond.findOne({ userId });
     if (!doc) {
-        doc = await new plafond({ repas: [], hotelPDJ: [], soireeEtape: [] }).save();
+        doc = await new plafond({ userId, repas: [], hotelPDJ: [], soireeEtape: [] }).save();
     }
     return doc;
 };
 
-/**
- * Formate le document unique pour le front
- * Retourne { midi: [...], hotel: [...] }
- */
 const formaterPourFront = (doc) => {
     const item = doc.toObject ? doc.toObject() : doc;
     const formaterEntrees = (entrees = []) =>
@@ -35,24 +28,22 @@ const formaterPourFront = (doc) => {
     };
 };
 
-// Récupère le document unique des plafonds
 exports.listePlafonds = async (req, res) => {
     try {
-        const doc = await getOuCreerDoc();
+        const doc = await getOuCreerDoc(req.userId);
         res.status(200).json(formaterPourFront(doc));
     } catch (err) {
         res.status(500).json({ message: err.message });
     }
 };
 
-// Ajoute une entrée dans le tableau midi ou hotel
 exports.ajoutPlafond = async (req, res) => {
     try {
         const { type, montantMax, dateEffet } = req.body;
         if (!TYPES_VALIDES.includes(type)) {
             return res.status(400).json({ message: 'Type invalide (repas, hotelPDJ ou soireeEtape)' });
         }
-        const doc = await getOuCreerDoc();
+        const doc = await getOuCreerDoc(req.userId);
         doc[type].push({
             montantMax: toCents(montantMax),
             dateEffet: new Date(dateEffet),
@@ -64,14 +55,13 @@ exports.ajoutPlafond = async (req, res) => {
     }
 };
 
-// Suppression d'une entrée dans l'historique (prévu pour plus tard)
 exports.suppressionPlafond = async (req, res) => {
     try {
         const { type, id } = req.body;
         if (!TYPES_VALIDES.includes(type)) {
             return res.status(400).json({ message: 'Type invalide' });
         }
-        const doc = await getOuCreerDoc();
+        const doc = await getOuCreerDoc(req.userId);
         doc[type] = doc[type].filter(e => e._id.toString() !== id);
         await doc.save();
         res.status(200).json(formaterPourFront(doc));

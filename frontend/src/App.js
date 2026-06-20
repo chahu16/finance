@@ -33,6 +33,7 @@ import { validateRow as validateFraisFixeBaseRow } from './components/utils/Frai
 import { GridEditSousCategorieCell } from './components/utils/SousCategorieCell.jsx';
 import { computeFraisFixeTrigger } from './components/utils/FraisFixesTrigger.js';
 import { DepensesRecettesColumns, snackbarMessages, initialSort, onFieldChange } from './components/gridConfigs/DepensesRecettesGrid.js';
+import { initAuth, getPermissionsFromToken } from './api/client.js';
 import { fetchDepensesRecettes, saveDepenseRecette, deleteDepenseRecette, rembourserNotesFrais } from './api/depensesRecettes.js';
 import RemboursementDiscordanceDialog from './components/RemboursementDiscordanceDialog.jsx';
 import { fetchCategories, saveCategorie, deleteCategorie } from './api/categories.js';
@@ -108,23 +109,37 @@ const ToggleArchivedButton = ({ shown, onToggle, label }) => (
     </Button>
 );
 
-const PARAMETRAGE_SECTIONS = [
-    'Comptes',
-    'Frais fixes',
-    'Notes de frais',
-    'Virements internes',
-    'Catégories',
-    'Paramétrage',
-    'Règle 50-30-20',
-];
 
 function App() {
     const [tab, setTab] = useState(0);
+    const [permissions, setPermissions] = useState(null);
     const [rows, setRows] = useState([]);
     const [comptesRows, setComptesRows] = useState([]);
     const [virementInternesRows, setVirementInternesRows] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
     const [loadError, setLoadError] = useState(false);
+
+    // Reçoit les permissions depuis le portail parent (postMessage)
+    useEffect(() => {
+        const handle = (e) => {
+            if (e.data?.type === 'AUTH_PERMISSIONS') {
+                setPermissions(e.data.permissions);
+            }
+        };
+        window.addEventListener('message', handle);
+        return () => window.removeEventListener('message', handle);
+    }, []);
+
+    // Si l'onglet Paramétrage est actif et l'accès admin est révoqué → retour à l'onglet 0
+    useEffect(() => {
+        if (tab === 3 && permissions !== null && !permissions?.finance?.admin) {
+            setTab(0);
+        }
+    }, [permissions, tab]);
+
+    const canImport      = !!permissions?.finance?.import;
+    const canNoteDeFrais = !!permissions?.finance?.noteDeFrais;
+    const canRegle503020 = !!permissions?.finance?.regle503020;
 
     const onDeleteConfirmDepenseRecette = useCallback(async (row) => {
         await deleteDepenseRecette(row);
@@ -151,19 +166,31 @@ function App() {
 
     // ─── Chargement initial — toutes les collections en parallèle ────────────
     useEffect(() => {
-        Promise.all([
-            fetchComptes(),
-            fetchDepensesRecettes(),
-            fetchFraisFixes(),
-            fetchVirementInternes(),
-            fetchCategories(),
-        ])
+        const ok = r => r.status === 'fulfilled' ? r.value : [];
+        initAuth()
+            .then(() => {
+                // En accès direct (sans iframe portail), le postMessage n'arrive jamais.
+                // On initialise les permissions depuis le JWT si aucun postMessage reçu.
+                setPermissions(prev => prev !== null ? prev : getPermissionsFromToken());
+            })
+            .then(() => Promise.allSettled([
+                fetchComptes(),
+                fetchDepensesRecettes(),
+                fetchFraisFixes(),
+                fetchVirementInternes(),
+                fetchCategories(),
+            ]))
             .then(([comptes, depRec, fraisFixes, virements, categories]) => {
-                setComptesRows(comptes);
-                setRows(depRec);
-                setFraisFixesRows(fraisFixes);
-                setVirementInternesRows(virements);
-                setCategoriesRows(categories);
+                // Les requêtes admin (403) donnent un tableau vide sans bloquer le reste
+                setComptesRows(ok(comptes));
+                setRows(ok(depRec));
+                setFraisFixesRows(ok(fraisFixes));
+                setVirementInternesRows(ok(virements));
+                setCategoriesRows(ok(categories));
+                // Erreur réseau sur les données de base → écran d'erreur
+                if (depRec.status === 'rejected' && depRec.reason?.message !== 'Permission refusée') {
+                    setLoadError(true);
+                }
             })
             .catch((err) => { console.error('Chargement initial:', err); setLoadError(true); })
             .finally(() => setIsLoading(false));
@@ -376,7 +403,6 @@ function App() {
                         description,
                         depenses: ff.type === 'Dépense' ? ff.montant : 0,
                         recettes: ff.type === 'Recette' ? ff.montant : 0,
-                        noteDeFrais: false,
                         notesFraisRemboursee: false,
                         fraisFixe: true,
                         chequeEnCours: false,
@@ -661,6 +687,14 @@ function App() {
         entityLabel: 'Frais fixe',
     }), [showArchivedFraisFixes]);
 
+    const parametrageSections = useMemo(() => {
+        const sections = ['Comptes', 'Frais fixes', 'Virements internes', 'Catégories'];
+        if (compteJointData) sections.push('Paramétrage');
+        if (canNoteDeFrais) sections.push('Notes de frais');
+        if (canRegle503020) sections.push('Règle 50-30-20');
+        return sections;
+    }, [compteJointData, canNoteDeFrais, canRegle503020]);
+
     // Rows pré-filtrées par compte pour éviter les filter() inline dans le JSX
     // (chaque filter() crée une nouvelle référence → re-render inutile des StatCards)
     const rowsByCompte = useMemo(() => {
@@ -714,6 +748,8 @@ function App() {
                             categoriesRows={categoriesRows}
                             budget503020Config={budget503020Config}
                             fraisFixesRows={fraisFixesRows}
+                            showNoteDeFrais={canNoteDeFrais}
+                            showRegle503020={canRegle503020}
                         />
                     </Box>
                     {comptesActifsData.map(compteData => (
@@ -743,7 +779,7 @@ function App() {
                     <Tab label="Tableau de bord" />
                     <Tab label="Dépenses / Recettes" />
                     <Tab label="Compte joint" sx={{ display: compteJointNom ? 'inline-flex' : 'none' }} />
-                    <Tab label="Paramétrage" />
+                    <Tab label="Paramétrage" sx={{ display: (permissions === null || permissions?.finance?.admin) ? 'inline-flex' : 'none' }} />
                 </Tabs>
             </Box>
 
@@ -771,6 +807,7 @@ function App() {
                         onDeleteConfirm={onDeleteConfirmDepenseRecette}
                         rowFilter={depensesRowFilter}
                         extraRowDefaults={{ categorie: '', sousCategorie: '' }}
+                        showImport={canImport}
                     />
                 </Box>
             )}
@@ -797,6 +834,7 @@ function App() {
                             onDeleteConfirm={onDeleteConfirmDepenseRecette}
                             rowFilter={(row) => row.compte === compteJointNom}
                             extraRowDefaults={compteJointExtraRowDefaults}
+                            showImport={canImport}
                         />
                     )}
                 </Box>
@@ -806,7 +844,7 @@ function App() {
             {tab === 3 && (
                 <Box sx={{ p: 3 }}>
                     <Box sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1, overflow: 'hidden' }}>
-                    {PARAMETRAGE_SECTIONS.map((label) => (
+                    {parametrageSections.map((label) => (
                         <Accordion
                             key={label}
                             disableGutters
@@ -971,6 +1009,7 @@ function App() {
                                         onRowsChange={setCategoriesRows}
                                         onSave={saveCategorie}
                                         onDeleteConfirm={onDeleteConfirmCategorie}
+                                        canRegle503020={canRegle503020}
                                     />
                                 )}
                                 {label === 'Virements internes' && (

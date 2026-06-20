@@ -27,7 +27,7 @@ const BUCKET_OPTIONS = [
 const AUTO_GROUPES = ['Revenues', 'Épargne'];
 
 // ─── GroupCard ─────────────────────────────────────────────────────────────────
-function GroupCard({ groupe, type, subcategories, existingGroups, onAddSub, onDeleteRequest, onRenameSub, onRenameGroup, onChangeBucket, locked }) {
+function GroupCard({ groupe, type, subcategories, existingGroups, onAddSub, onDeleteRequest, onRenameSub, onRenameGroup, onChangeBucket, locked, canRegle503020 }) {
     // ── Ajout sous-catégorie ────────────────────────────────────────────────────
     const [adding, setAdding] = React.useState(false);
     const [newName, setNewName] = React.useState('');
@@ -133,7 +133,7 @@ function GroupCard({ groupe, type, subcategories, existingGroups, onAddSub, onDe
                 )}
 
                 {/* ── Bucket 50/30/20 ── */}
-                {!AUTO_GROUPES.includes(groupe) && type === 'Dépense' && (
+                {canRegle503020 && !AUTO_GROUPES.includes(groupe) && type === 'Dépense' && (
                     <FormControl size="small" sx={{ mb: 1 }}>
                         <Select
                             value={subcategories[0]?.bucket ?? null}
@@ -157,7 +157,7 @@ function GroupCard({ groupe, type, subcategories, existingGroups, onAddSub, onDe
                 {/* ── Chips sous-catégories ── */}
                 <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 0.5 }}>
                     {subcategories.map(sub => (
-                        editingSub === sub.id ? (
+                        !sub.isDefault && editingSub === sub.id ? (
                             <TextField
                                 key={sub.id}
                                 autoFocus
@@ -182,15 +182,15 @@ function GroupCard({ groupe, type, subcategories, existingGroups, onAddSub, onDe
                                 key={sub.id}
                                 label={sub.nom}
                                 size="small"
-                                onClick={() => startEditSub(sub)}
-                                onDelete={() => onDeleteRequest(sub)}
-                                sx={{ cursor: 'text' }}
+                                onClick={sub.isDefault ? undefined : () => startEditSub(sub)}
+                                onDelete={sub.isDefault ? undefined : () => onDeleteRequest(sub)}
+                                sx={{ cursor: sub.isDefault ? 'default' : 'text' }}
                             />
                         )
                     ))}
 
                     {/* ── Ajout inline ── */}
-                    {adding ? (
+                    {!locked && adding ? (
                         <TextField
                             autoFocus
                             size="small"
@@ -285,7 +285,7 @@ function NewGroupForm({ type, existingGroups, onAdd, onCancel }) {
 }
 
 // ─── TypeSection ───────────────────────────────────────────────────────────────
-function TypeSection({ type, categoriesRows, onAddSub, onDeleteRequest, onRenameSub, onRenameGroup, onChangeBucket }) {
+function TypeSection({ type, categoriesRows, onAddSub, onDeleteRequest, onRenameSub, onRenameGroup, onChangeBucket, canRegle503020 }) {
     const [addingGroup, setAddingGroup] = React.useState(false);
 
     const groupEntries = React.useMemo(() => {
@@ -321,7 +321,8 @@ function TypeSection({ type, categoriesRows, onAddSub, onDeleteRequest, onRename
                         onRenameSub={onRenameSub}
                         onRenameGroup={onRenameGroup}
                         onChangeBucket={onChangeBucket}
-                        locked={groupe === 'Revenues'}
+                        locked={subs.some(s => s.isDefault)}
+                        canRegle503020={canRegle503020}
                     />
                 ))}
             </Box>
@@ -342,7 +343,7 @@ function TypeSection({ type, categoriesRows, onAddSub, onDeleteRequest, onRename
 }
 
 // ─── CategoriesManager ─────────────────────────────────────────────────────────
-export function CategoriesManager({ categoriesRows, onRowsChange, onSave, onDeleteConfirm }) {
+export function CategoriesManager({ categoriesRows, onRowsChange, onSave, onDeleteConfirm, canRegle503020 }) {
     const [deleteTarget, setDeleteTarget] = React.useState(null);
     const [snackbar, setSnackbar] = React.useState({ open: false, message: '', severity: 'success' });
 
@@ -420,6 +421,7 @@ export function CategoriesManager({ categoriesRows, onRowsChange, onSave, onDele
                 onRenameSub={handleRenameSub}
                 onRenameGroup={handleRenameGroup}
                 onChangeBucket={handleChangeBucket}
+                canRegle503020={canRegle503020}
             />
             <TypeSection
                 type="Recette"
@@ -429,6 +431,7 @@ export function CategoriesManager({ categoriesRows, onRowsChange, onSave, onDele
                 onRenameSub={handleRenameSub}
                 onRenameGroup={handleRenameGroup}
                 onChangeBucket={handleChangeBucket}
+                canRegle503020={canRegle503020}
             />
 
             <Dialog open={!!deleteTarget} onClose={() => setDeleteTarget(null)} transitionDuration={0} maxWidth="xs" fullWidth>

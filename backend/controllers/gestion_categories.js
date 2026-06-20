@@ -6,11 +6,12 @@ const formater = (doc) => ({
     nom: doc.nom,
     type: doc.type,
     bucket: doc.bucket ?? null,
+    isDefault: doc.isDefault ?? false,
 });
 
 exports.listeCategories = async (req, res) => {
     try {
-        const data = await categorie.find().sort({ type: 1, groupe: 1, nom: 1 });
+        const data = await categorie.find({ userId: req.userId }).sort({ type: 1, groupe: 1, nom: 1 });
         res.status(200).json(data.map(formater));
     } catch (error) {
         res.status(400).json({ error: error.message });
@@ -20,7 +21,7 @@ exports.listeCategories = async (req, res) => {
 exports.ajoutCategorie = async (req, res) => {
     try {
         const { groupe, nom, type, bucket } = req.body;
-        const doc = await new categorie({ groupe: String(groupe).trim(), nom: String(nom).trim(), type, bucket: bucket ?? null }).save();
+        const doc = await new categorie({ userId: req.userId, groupe: String(groupe).trim(), nom: String(nom).trim(), type, bucket: bucket ?? null }).save();
         res.status(201).json(formater(doc));
     } catch (error) {
         res.status(400).json({ error: error.message });
@@ -30,12 +31,14 @@ exports.ajoutCategorie = async (req, res) => {
 exports.modificationCategorie = async (req, res) => {
     try {
         const { id, groupe, nom, type, bucket } = req.body;
-        const doc = await categorie.findByIdAndUpdate(
-            id,
+        const existing = await categorie.findOne({ _id: id, userId: req.userId });
+        if (!existing) return res.status(404).json({ message: 'Catégorie introuvable' });
+        if (existing.isDefault) return res.status(403).json({ message: 'Catégorie par défaut non modifiable' });
+        const doc = await categorie.findOneAndUpdate(
+            { _id: id, userId: req.userId },
             { $set: { groupe: String(groupe).trim(), nom: String(nom).trim(), type, bucket: bucket ?? null } },
             { returnDocument: 'after' }
         );
-        if (!doc) return res.status(404).json({ message: 'Catégorie introuvable' });
         res.status(200).json(formater(doc));
     } catch (error) {
         res.status(400).json({ error: error.message });
@@ -44,7 +47,10 @@ exports.modificationCategorie = async (req, res) => {
 
 exports.suppressionCategorie = async (req, res) => {
     try {
-        await categorie.deleteOne({ _id: req.body.id });
+        const existing = await categorie.findOne({ _id: req.body.id, userId: req.userId });
+        if (!existing) return res.status(404).json({ message: 'Catégorie introuvable' });
+        if (existing.isDefault) return res.status(403).json({ message: 'Catégorie par défaut non supprimable' });
+        await categorie.deleteOne({ _id: req.body.id, userId: req.userId });
         res.status(200).json({ message: 'Catégorie supprimée !' });
     } catch (error) {
         res.status(400).json({ error: error.message });

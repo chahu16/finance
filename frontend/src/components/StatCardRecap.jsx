@@ -27,7 +27,7 @@ function periodeDebut(periode) {
     return d;
 }
 
-function StatCardRecap({ comptesData, rowsByCompte, virementInternesRows, compteJointData, compteJointConfig, categoriesRows = [], budget503020Config = {}, fraisFixesRows = [] }) {
+function StatCardRecap({ comptesData, rowsByCompte, virementInternesRows, compteJointData, compteJointConfig, categoriesRows = [], budget503020Config = {}, fraisFixesRows = [], showNoteDeFrais = false, showRegle503020 = false }) {
     const stats = useMemo(() => {
         let totalInstantT = 0;
         let totalTheorique = 0;
@@ -77,9 +77,8 @@ function StatCardRecap({ comptesData, rowsByCompte, virementInternesRows, compte
                 if (r.depenseRecettesAMasquer || !r.dateDepensesRecettes) continue;
                 const d = new Date(r.dateDepensesRecettes);
                 if (d.getMonth() !== currentMonth || d.getFullYear() !== currentYear) continue;
-                if (r.noteDeFrais) {
-                    const delta = r.depassementPlafond ?? r.depenseReelle ?? 0;
-                    totalDepensesMois += delta - ((r.depenses || 0) - delta);
+                if (r.noteDeFrais || r.categorie === 'Frais déplacements') {
+                    totalDepensesMois += r.depassementPlafond ?? r.depenseReelle ?? 0;
                 } else {
                     totalDepensesMois += r.depenses || 0;
                 }
@@ -118,9 +117,8 @@ function StatCardRecap({ comptesData, rowsByCompte, virementInternesRows, compte
                 })
                 .forEach(r => {
                     const p = pMoi(r);
-                    if (r.noteDeFrais) {
-                        const delta = r.depassementPlafond ?? r.depenseReelle ?? 0;
-                        totalDepensesMois += (delta - ((r.depenses || 0) - delta)) * p;
+                    if (r.noteDeFrais || r.categorie === 'Frais déplacements') {
+                        totalDepensesMois += (r.depassementPlafond ?? r.depenseReelle ?? 0) * p;
                     } else {
                         totalDepensesMois += (r.depenses || 0) * p;
                     }
@@ -217,7 +215,7 @@ function StatCardRecap({ comptesData, rowsByCompte, virementInternesRows, compte
         for (const compte of comptesData) {
             const rows = rowsByCompte[compte.nomCompte] ?? [];
             for (const r of rows) {
-                if (r.noteDeFrais) {
+                if (r.categorie === 'Frais déplacements') {
                     if (!r.notesFraisRemboursee) {
                         const depassement = r.depassementPlafond ?? r.depenseReelle ?? 0;
                         notesEnCours += (r.depenses || 0) - depassement;
@@ -307,9 +305,9 @@ function StatCardRecap({ comptesData, rowsByCompte, virementInternesRows, compte
                     </Box>
                 </Box>
 
-                <Divider orientation="vertical" flexItem sx={recapVerticalDividerSx} />
+                {showNoteDeFrais && <Divider orientation="vertical" flexItem sx={recapVerticalDividerSx} />}
 
-                <Box sx={recapSectionSx}>
+                {showNoteDeFrais && <Box sx={recapSectionSx}>
                     <Typography sx={recapSectionLabelSx}>Notes de frais</Typography>
                     <Box sx={recapSubItemsRowSx}>
                         <Box sx={recapSubItemSx}>
@@ -331,9 +329,9 @@ function StatCardRecap({ comptesData, rowsByCompte, virementInternesRows, compte
                             </Box>
                         )}
                     </Box>
-                </Box>
+                </Box>}
 
-                {budget503020 && (
+                {showRegle503020 && budget503020 && (
                     <>
                         <Divider orientation="vertical" flexItem sx={recapVerticalDividerSx} />
                         <Box sx={recapSectionSx}>

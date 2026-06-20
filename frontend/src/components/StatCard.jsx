@@ -29,7 +29,7 @@ function StatCard({ compte, rows, compteData, virementInternesRows = [] }) {
                 return d.getMonth() === currentMonth && d.getFullYear() === currentYear;
             })
             .reduce((acc, r) => {
-                const dep = r.noteDeFrais ? (r.depenseReelle ?? r.depenses) : (r.depenses || 0);
+                const dep = (r.noteDeFrais || r.categorie === 'Frais déplacements') ? (r.depenseReelle ?? r.depenses) : (r.depenses || 0);
                 return acc + dep;
             }, 0);
 
