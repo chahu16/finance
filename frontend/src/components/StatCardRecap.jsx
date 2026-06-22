@@ -126,6 +126,8 @@ function StatCardRecap({ comptesData, rowsByCompte, virementInternesRows, compte
                 });
         }
 
+        const ratioMois = totalRecettesMois > 0 ? (totalDepensesMois / totalRecettesMois * 100) : null;
+        const resteMois = totalRecettesMois - totalDepensesMois;
         const ratio = totalRecettes12m > 0 ? (totalDepenses12m / totalRecettes12m * 100) : null;
         const reste = totalRecettes12m - totalDepenses12m;
 
@@ -246,10 +248,10 @@ function StatCardRecap({ comptesData, rowsByCompte, virementInternesRows, compte
         const tropMoinsPlein12m = totalRemboursRecus12m - totalRemboursableMarque12m - totalRemboursablePending12m;
         const hasTropMoinsPlein = Math.abs(tropMoinsPlein12m) > 0.005;
 
-        return { totalInstantT, totalTheorique, totalDepenses12m, totalRecettes12m, ratio, reste, budget503020, notesEnCours, deltaPoche12m, tropMoinsPlein12m, hasTropMoinsPlein, totalDepensesMois, totalRecettesMois, monthLabel };
+        return { totalInstantT, totalTheorique, totalDepenses12m, totalRecettes12m, ratio, reste, budget503020, notesEnCours, deltaPoche12m, tropMoinsPlein12m, hasTropMoinsPlein, totalDepensesMois, totalRecettesMois, ratioMois, resteMois, monthLabel };
     }, [comptesData, rowsByCompte, virementInternesRows, compteJointData, compteJointConfig, categoriesRows, budget503020Config, fraisFixesRows]);
 
-    const { totalInstantT, totalTheorique, totalDepenses12m, totalRecettes12m, ratio, reste, budget503020, notesEnCours, deltaPoche12m, tropMoinsPlein12m, hasTropMoinsPlein, totalDepensesMois, totalRecettesMois, monthLabel } = stats;
+    const { totalInstantT, totalTheorique, totalDepenses12m, totalRecettes12m, ratio, reste, budget503020, notesEnCours, deltaPoche12m, tropMoinsPlein12m, hasTropMoinsPlein, totalDepensesMois, totalRecettesMois, ratioMois, resteMois, monthLabel } = stats;
 
     return (
         <Box sx={recapCardSx}>
@@ -259,17 +261,10 @@ function StatCardRecap({ comptesData, rowsByCompte, virementInternesRows, compte
             </Box>
             <Box sx={recapSectionsSx}>
 
+                {/* 1 — Récapitulatif comptes */}
                 <Box sx={recapSectionSx}>
-                    <Typography sx={recapSectionLabelSx}>Récapitulatif du mois de {monthLabel} (en cours)</Typography>
+                    <Typography sx={recapSectionLabelSx}>Récapitulatif comptes</Typography>
                     <Box sx={recapSubItemsRowSx}>
-                        <Box sx={recapSubItemSx}>
-                            <Typography sx={recapSubLabelSx}>Dépenses</Typography>
-                            <Typography sx={recapSubValueSx}>{formatEuro(totalDepensesMois)}</Typography>
-                        </Box>
-                        <Box sx={recapSubItemSx}>
-                            <Typography sx={recapSubLabelSx}>Recettes</Typography>
-                            <Typography sx={recapSubValueSx}>{formatEuro(totalRecettesMois)}</Typography>
-                        </Box>
                         <Box sx={recapSubItemSx}>
                             <Typography sx={recapSubLabelSx}>Solde théorique</Typography>
                             <Typography sx={recapSubValueSx}>{formatEuro(totalTheorique)}</Typography>
@@ -283,6 +278,32 @@ function StatCardRecap({ comptesData, rowsByCompte, virementInternesRows, compte
 
                 <Divider orientation="vertical" flexItem sx={recapVerticalDividerSx} />
 
+                {/* 2 — Mois en cours */}
+                <Box sx={recapSectionSx}>
+                    <Typography sx={recapSectionLabelSx}>Récapitulatif de {monthLabel} (en cours)</Typography>
+                    <Box sx={recapSubItemsRowSx}>
+                        <Box sx={recapSubItemSx}>
+                            <Typography sx={recapSubLabelSx}>Dépenses</Typography>
+                            <Typography sx={recapSubValueSx}>{formatEuro(totalDepensesMois)}</Typography>
+                        </Box>
+                        <Box sx={recapSubItemSx}>
+                            <Typography sx={recapSubLabelSx}>Recettes</Typography>
+                            <Typography sx={recapSubValueSx}>{formatEuro(totalRecettesMois)}</Typography>
+                        </Box>
+                        <Box sx={recapSubItemSx}>
+                            <Typography sx={recapSubLabelSx}>Ratio dép./rec.</Typography>
+                            <Typography sx={recapSubValueSx}>{ratioMois != null ? `${ratioMois.toFixed(1)} %` : '—'}</Typography>
+                        </Box>
+                        <Box sx={recapSubItemSx}>
+                            <Typography sx={recapSubLabelSx}>Reste à dépenser</Typography>
+                            <Typography sx={resteMois >= 0 ? recapSubValuePositiveSx : recapSubValueNegativeSx}>{formatEuro(resteMois)}</Typography>
+                        </Box>
+                    </Box>
+                </Box>
+
+                <Divider orientation="vertical" flexItem sx={recapVerticalDividerSx} />
+
+                {/* 3 — 12 mois glissants */}
                 <Box sx={recapSectionSx}>
                     <Typography sx={recapSectionLabelSx}>12 mois glissants</Typography>
                     <Box sx={recapSubItemsRowSx}>
@@ -305,32 +326,7 @@ function StatCardRecap({ comptesData, rowsByCompte, virementInternesRows, compte
                     </Box>
                 </Box>
 
-                {showNoteDeFrais && <Divider orientation="vertical" flexItem sx={recapVerticalDividerSx} />}
-
-                {showNoteDeFrais && <Box sx={recapSectionSx}>
-                    <Typography sx={recapSectionLabelSx}>Notes de frais</Typography>
-                    <Box sx={recapSubItemsRowSx}>
-                        <Box sx={recapSubItemSx}>
-                            <Typography sx={recapSubLabelSx}>En cours</Typography>
-                            <Typography sx={recapSubValueSx}>{formatEuro(notesEnCours)}</Typography>
-                        </Box>
-                        <Box sx={recapSubItemSx}>
-                            <Typography sx={recapSubLabelSx}>Delta poche (12m)</Typography>
-                            <Typography sx={recapSubValueSx}>{formatEuro(deltaPoche12m)}</Typography>
-                        </Box>
-                        {hasTropMoinsPlein && (
-                            <Box sx={recapSubItemSx}>
-                                <Typography sx={recapSubLabelSx}>
-                                    {tropMoinsPlein12m < 0 ? 'Reste à rembourser' : 'Trop perçu'}
-                                </Typography>
-                                <Typography sx={tropMoinsPlein12m < 0 ? recapSubValueSx : recapSubValuePositiveSx}>
-                                    {formatEuro(Math.abs(tropMoinsPlein12m))}
-                                </Typography>
-                            </Box>
-                        )}
-                    </Box>
-                </Box>}
-
+                {/* 4 — Règle 50/30/20 */}
                 {showRegle503020 && budget503020 && (
                     <>
                         <Divider orientation="vertical" flexItem sx={recapVerticalDividerSx} />
@@ -381,6 +377,33 @@ function StatCardRecap({ comptesData, rowsByCompte, virementInternesRows, compte
                         </Box>
                     </>
                 )}
+
+                {/* 5 — Notes de frais */}
+                {showNoteDeFrais && <Divider orientation="vertical" flexItem sx={recapVerticalDividerSx} />}
+
+                {showNoteDeFrais && <Box sx={recapSectionSx}>
+                    <Typography sx={recapSectionLabelSx}>Notes de frais</Typography>
+                    <Box sx={recapSubItemsRowSx}>
+                        <Box sx={recapSubItemSx}>
+                            <Typography sx={recapSubLabelSx}>En cours</Typography>
+                            <Typography sx={recapSubValueSx}>{formatEuro(notesEnCours)}</Typography>
+                        </Box>
+                        <Box sx={recapSubItemSx}>
+                            <Typography sx={recapSubLabelSx}>Delta poche (12m)</Typography>
+                            <Typography sx={recapSubValueSx}>{formatEuro(deltaPoche12m)}</Typography>
+                        </Box>
+                        {hasTropMoinsPlein && (
+                            <Box sx={recapSubItemSx}>
+                                <Typography sx={recapSubLabelSx}>
+                                    {tropMoinsPlein12m < 0 ? 'Reste à rembourser' : 'Trop perçu'}
+                                </Typography>
+                                <Typography sx={tropMoinsPlein12m < 0 ? recapSubValueSx : recapSubValuePositiveSx}>
+                                    {formatEuro(Math.abs(tropMoinsPlein12m))}
+                                </Typography>
+                            </Box>
+                        )}
+                    </Box>
+                </Box>}
 
             </Box>
         </Box>
