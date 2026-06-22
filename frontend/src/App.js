@@ -689,7 +689,7 @@ function App() {
 
     const parametrageSections = useMemo(() => {
         const sections = ['Comptes', 'Frais fixes', 'Virements internes', 'Catégories'];
-        if (compteJointData) sections.push('Paramétrage');
+        if (compteJointData) sections.push('Compte joint');
         if (canNoteDeFrais) sections.push('Notes de frais');
         if (canRegle503020) sections.push('Règle 50-30-20');
         return sections;
@@ -775,7 +775,7 @@ function App() {
 
             {/* ─── Barre d'onglets ──────────────────────────────────────────── */}
             <Box sx={{ borderBottom: 1, borderColor: 'divider' }}>
-                <Tabs value={tab} onChange={(_, v) => setTab(v)}>
+                <Tabs value={tab} onChange={(_, v) => setTab(v)} sx={{ '& .MuiTab-root': { textTransform: 'none' } }}>
                     <Tab label="Tableau de bord" />
                     <Tab label="Dépenses / Recettes" />
                     <Tab label="Compte joint" sx={{ display: compteJointNom ? 'inline-flex' : 'none' }} />
@@ -897,9 +897,9 @@ function App() {
                                 {label === 'Notes de frais' && (
                                     <PlafondNotesFrais />
                                 )}
-                                {label === 'Paramétrage' && (
+                                {label === 'Compte joint' && (
                                     <Box sx={parametrageFormSx}>
-                                        <Typography sx={formSectionTitleSx}>Compte joint</Typography>
+                                        <Typography sx={formSectionTitleSx}>Nom des personnes</Typography>
                                         <Box sx={formRowSx}>
                                             <TextField
                                                 label="Mon nom"

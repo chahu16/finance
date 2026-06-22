@@ -10,7 +10,7 @@ export const formSectionTitleSx = {
     fontWeight: 600,
     fontSize: '0.8rem',
     color: '#555',
-    textTransform: 'uppercase',
+    textTransform: 'none',
     letterSpacing: '0.05em',
     mb: 0.5,
 };
