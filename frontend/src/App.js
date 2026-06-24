@@ -39,6 +39,11 @@ import RemboursementDiscordanceDialog from './components/RemboursementDiscordanc
 import { fetchCategories, saveCategorie, deleteCategorie } from './api/categories.js';
 import { CategoriesManager } from './components/CategoriesManager.jsx';
 import PlafondNotesFrais from './components/PlafondNotesFrais.jsx';
+import InvestissementsTab from './components/InvestissementsTab.jsx';
+import { fetchInvestissements, saveInvestissement, deleteInvestissement, lierFraisFixe as lierFraisFixeApi } from './api/investissements.js';
+import { saveInvestissementHistorique, deleteInvestissementHistorique } from './api/investissementsHistorique.js';
+import { InvestissementsColumns, snackbarMessages as investissementsMessages, initialSort as investissementsInitialSort, extraRowDefaults as investissementsExtraRowDefaults } from './components/gridConfigs/InvestissementsGrid.js';
+import { validateRow as validateInvestissementRow } from './components/utils/InvestissementsValidation.js';
 import { ComptesColumns, snackbarMessages as comptesMessages, initialSort as comptesInitialSort, extraRowDefaults as comptesExtraRowDefaults } from './components/gridConfigs/ComptesGrid.js';
 import { fetchComptes, saveCompte, deleteCompte, toggleArchiveCompte } from './api/comptes.js';
 import { fetchFraisFixes, saveFraisFixe, deleteFraisFixe, toggleArchiveFraisFixe } from './api/fraisFixes.js';
@@ -132,14 +137,15 @@ function App() {
 
     // Si l'onglet Paramétrage est actif et l'accès admin est révoqué → retour à l'onglet 0
     useEffect(() => {
-        if (tab === 3 && permissions !== null && !permissions?.finance?.admin) {
+        if (tab === 4 && permissions !== null && !permissions?.finance?.admin) {
             setTab(0);
         }
     }, [permissions, tab]);
 
-    const canImport      = !!permissions?.finance?.import;
-    const canNoteDeFrais = !!permissions?.finance?.noteDeFrais;
-    const canRegle503020 = !!permissions?.finance?.regle503020;
+    const canImport        = !!permissions?.finance?.import;
+    const canNoteDeFrais   = !!permissions?.finance?.noteDeFrais;
+    const canRegle503020   = !!permissions?.finance?.regle503020;
+    const canInvestissement = !!permissions?.finance?.investissement;
 
     const onDeleteConfirmDepenseRecette = useCallback(async (row) => {
         await deleteDepenseRecette(row);
@@ -179,14 +185,20 @@ function App() {
                 fetchFraisFixes(),
                 fetchVirementInternes(),
                 fetchCategories(),
+                fetchInvestissements(),
             ]))
-            .then(([comptes, depRec, fraisFixes, virements, categories]) => {
-                // Les requêtes admin (403) donnent un tableau vide sans bloquer le reste
+            .then(([comptes, depRec, fraisFixes, virements, categories, investissements]) => {
+                // Les requêtes admin / options (403) donnent un tableau vide sans bloquer le reste
                 setComptesRows(ok(comptes));
                 setRows(ok(depRec));
                 setFraisFixesRows(ok(fraisFixes));
                 setVirementInternesRows(ok(virements));
                 setCategoriesRows(ok(categories));
+                const invRows = ok(investissements);
+                setInvestissementsRows(invRows);
+                setInvestissementsHistoriqueRows(
+                    invRows.flatMap(inv => (inv.historique ?? []).map(h => ({ ...h, investissementId: inv.id })))
+                );
                 // Erreur réseau sur les données de base → écran d'erreur
                 if (depRec.status === 'rejected' && depRec.reason?.message !== 'Permission refusée') {
                     setLoadError(true);
@@ -203,6 +215,8 @@ function App() {
 
     const [fraisFixesRows, setFraisFixesRows] = useState([]);
     const [categoriesRows, setCategoriesRows] = useState([]);
+    const [investissementsRows, setInvestissementsRows] = useState([]);
+    const [investissementsHistoriqueRows, setInvestissementsHistoriqueRows] = useState([]);
 
     const catRemboursementFraisPro = useMemo(
         () => categoriesRows.find(c => c.groupe === 'Remboursement' && c.nom === 'Frais pro') ?? null,
@@ -524,6 +538,11 @@ function App() {
         if (!compteJointNom && tab === 2) setTab(0);
     }, [compteJointNom, tab]);
 
+    // Si plus aucun investissement alors que l'onglet est actif → retour à l'onglet 0
+    useEffect(() => {
+        if (canInvestissement && investissementsRows.length === 0 && tab === 3) setTab(0);
+    }, [investissementsRows.length, canInvestissement, tab]);
+
     // Sync noms depuis la DB (compte joint) → compteJointConfig
     useEffect(() => {
         if (!compteJointData) return;
@@ -538,17 +557,62 @@ function App() {
         });
     }, [compteJointData]);
 
+    const catAssuranceVieId = useMemo(
+        () => categoriesRows.find(c => c.groupe === 'Revenus' && c.nom === 'Assurance vie')?.id ?? null,
+        [categoriesRows]
+    );
+
+    const avInvestissements = useMemo(
+        () => investissementsRows.filter(inv => inv.type === 'Assurance vie'),
+        [investissementsRows]
+    );
+
     // Colonnes dépenses/recettes avec valueOptions dynamiques (comptes + sousCategorie selon type)
-    const depensesRecettesColumns = useMemo(
-        () => DepensesRecettesColumns.map(col => {
+    const depensesRecettesColumns = useMemo(() => {
+        const cols = DepensesRecettesColumns.map(col => {
             if (col.field === 'compte') return { ...col, valueOptions: activeComptesOptions };
             if (col.field === 'sousCategorie') return makeSousCategorieColumn(
                 col, categoriesRows, (row) => (row?.recettes ?? 0) > 0
             );
             return col;
-        }),
-        [activeComptesOptions, categoriesRows]
-    );
+        });
+
+        if (canInvestissement && catAssuranceVieId && avInvestissements.length > 0) {
+            cols.push({
+                field: 'investissementRef',
+                headerName: 'AV liée',
+                width: 160,
+                editable: true,
+                isCellEditable: (params) => params.row.sousCategorie === catAssuranceVieId,
+                renderCell: (params) => {
+                    if (params.row.sousCategorie !== catAssuranceVieId) return null;
+                    const inv = avInvestissements.find(i => i.id === params.value);
+                    return (
+                        <Typography sx={{ fontSize: '0.875rem', color: inv ? 'inherit' : '#bbb', fontStyle: inv ? 'normal' : 'italic' }}>
+                            {inv ? inv.nom : '—'}
+                        </Typography>
+                    );
+                },
+                renderEditCell: (params) => (
+                    <Select
+                        value={params.value || ''}
+                        onChange={e => params.api.setEditCellValue({ id: params.id, field: params.field, value: e.target.value || null })}
+                        fullWidth
+                        size="small"
+                        displayEmpty
+                        sx={{ fontSize: '0.875rem' }}
+                    >
+                        <MenuItem value=""><em>— Aucune —</em></MenuItem>
+                        {avInvestissements.map(inv => (
+                            <MenuItem key={inv.id} value={inv.id} sx={{ fontSize: '0.875rem' }}>{inv.nom}</MenuItem>
+                        ))}
+                    </Select>
+                ),
+            });
+        }
+
+        return cols;
+    }, [activeComptesOptions, categoriesRows, canInvestissement, catAssuranceVieId, avInvestissements]);
 
     // Tous les comptes non-archivés, non-joints avec soldeInitial → récapitulatif global
     const comptesRecapData = useMemo(
@@ -687,13 +751,39 @@ function App() {
         entityLabel: 'Frais fixe',
     }), [showArchivedFraisFixes]);
 
+    const onSaveInvestissementHistorique = useCallback(async (row, isNew) => {
+        const saved = await saveInvestissementHistorique(row, isNew);
+        setInvestissementsHistoriqueRows(prev => isNew
+            ? [saved, ...prev.filter(r => r.id !== row.id)]
+            : prev.map(r => r.id === row.id ? saved : r)
+        );
+        return saved;
+    }, []);
+
+    const onDeleteConfirmInvestissementHistorique = useCallback(async (row) => {
+        await deleteInvestissementHistorique(row);
+        setInvestissementsHistoriqueRows(prev => prev.filter(h => h.id !== row.id));
+    }, []);
+
+    const handleLierFraisFixe = useCallback(async (investissementId, fraisFixeId) => {
+        const saved = await lierFraisFixeApi(investissementId, fraisFixeId);
+        setInvestissementsRows(prev => prev.map(inv => inv.id === investissementId ? { ...inv, fraisFixeRef: saved.fraisFixeRef } : inv));
+    }, []);
+
+    const onDeleteConfirmInvestissement = useCallback(async (row) => {
+        await deleteInvestissement(row);
+        setInvestissementsHistoriqueRows(prev => prev.filter(h => h.investissementId !== row.id));
+        return 'delete';
+    }, []);
+
     const parametrageSections = useMemo(() => {
         const sections = ['Comptes', 'Frais fixes', 'Virements internes', 'Catégories'];
+        if (canInvestissement) sections.push('Investissements');
         if (compteJointData) sections.push('Compte joint');
         if (canNoteDeFrais) sections.push('Notes de frais');
         if (canRegle503020) sections.push('Règle 50-30-20');
         return sections;
-    }, [compteJointData, canNoteDeFrais, canRegle503020]);
+    }, [canInvestissement, compteJointData, canNoteDeFrais, canRegle503020]);
 
     // Rows pré-filtrées par compte pour éviter les filter() inline dans le JSX
     // (chaque filter() crée une nouvelle référence → re-render inutile des StatCards)
@@ -779,6 +869,7 @@ function App() {
                     <Tab label="Tableau de bord" />
                     <Tab label="Dépenses / Recettes" />
                     <Tab label="Compte joint" sx={{ display: compteJointNom ? 'inline-flex' : 'none' }} />
+                    <Tab label="Investissements" sx={{ display: canInvestissement && investissementsRows.length > 0 ? 'inline-flex' : 'none' }} />
                     <Tab label="Paramétrage" sx={{ display: (permissions === null || permissions?.finance?.admin) ? 'inline-flex' : 'none' }} />
                 </Tabs>
             </Box>
@@ -787,6 +878,23 @@ function App() {
             {tab === 0 && (
                 <Box sx={{ p: 3 }}>
                     <DepensesChart rows={rows} compteJointNom={compteJointNom} pourcentageDefaut={compteJointConfig.pourcentageDefaut ?? 50} />
+                </Box>
+            )}
+
+            {/* ─── Investissements ──────────────────────────────────────────── */}
+            {tab === 3 && (
+                <Box sx={{ p: 3 }}>
+                    <InvestissementsTab
+                        investissementsRows={investissementsRows}
+                        historiqueRows={investissementsHistoriqueRows}
+                        fraisFixesRows={fraisFixesRows}
+                        categoriesRows={categoriesRows}
+                        depensesRecettesRows={rows}
+                        onSave={onSaveInvestissementHistorique}
+                        onDeleteHistorique={onDeleteConfirmInvestissementHistorique}
+                        onLierFraisFixe={handleLierFraisFixe}
+                        onUpdateRetrait={onSaveDepenseRecette}
+                    />
                 </Box>
             )}
 
@@ -841,7 +949,7 @@ function App() {
             )}
 
             {/* ─── Paramétrage ──────────────────────────────────────────────── */}
-            {tab === 3 && (
+            {tab === 4 && (
                 <Box sx={{ p: 3 }}>
                     <Box sx={{ border: '1px solid', borderColor: 'divider', borderRadius: 1, overflow: 'hidden' }}>
                     {parametrageSections.map((label) => (
@@ -866,7 +974,7 @@ function App() {
                             <AccordionSummary expandIcon={<ExpandMoreIcon />}>
                                 {label}
                             </AccordionSummary>
-                            <AccordionDetails sx={(label === 'Comptes' || label === 'Frais fixes' || label === 'Virements internes' || label === 'Catégories' || label === 'Notes de frais') ? { p: 0 } : undefined}>
+                            <AccordionDetails sx={(label === 'Comptes' || label === 'Frais fixes' || label === 'Virements internes' || label === 'Catégories' || label === 'Notes de frais' || label === 'Investissements') ? { p: 0 } : undefined}>
                                 {label === 'Frais fixes' && (
                                     <FullFeaturedCrudGrid
                                         columns={fraisFixesColumns}
@@ -1054,6 +1162,23 @@ function App() {
                                                 label="comptes"
                                             />
                                         }
+                                    />
+                                )}
+                                {label === 'Investissements' && (
+                                    <FullFeaturedCrudGrid
+                                        columns={InvestissementsColumns}
+                                        initialRows={investissementsRows}
+                                        onRowsChange={setInvestissementsRows}
+                                        addButtonLabel="Ajouter un investissement"
+                                        fieldFocusEdit="nom"
+                                        validateRow={validateInvestissementRow}
+                                        messages={investissementsMessages}
+                                        initialSort={investissementsInitialSort}
+                                        extraRowDefaults={investissementsExtraRowDefaults}
+                                        onSave={saveInvestissement}
+                                        onDeleteConfirm={onDeleteConfirmInvestissement}
+                                        rowDisplayField="nom"
+                                        height={400}
                                     />
                                 )}
                                 {label === 'Règle 50-30-20' && (

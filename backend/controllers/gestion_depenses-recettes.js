@@ -37,6 +37,8 @@ const transformerVersSchema = (data, mappingComptes = {}) => {
         chequeEnCours: parseBooleen(data.chequeEnCours),
         depenseRecettesAMasquer: parseBooleen(data.aMasquer ?? data.depenseRecettesAMasquer),
         sousCategorie: data.sousCategorie || null,
+        investissementRef: data.investissementRef || null,
+        montantBrutRetrait: data.montantBrutRetrait != null ? toCents(data.montantBrutRetrait) : null,
         parts: (() => {
             if (Array.isArray(data.parts)) return data.parts;
             const v = parseFloat(String(data.parts ?? "").replace(',', '.'));
@@ -67,6 +69,8 @@ const formaterPourFront = (doc, plafondDoc = null) => {
         parts: item.parts ?? [50, 50],
         categorie: item.sousCategorie?.groupe ?? '',
         sousCategorie: item.sousCategorie?._id?.toString() ?? '',
+        investissementRef: item.investissementRef?.toString() ?? null,
+        montantBrutRetrait: item.montantBrutRetrait != null ? item.montantBrutRetrait / 100 : null,
         depassementPlafond: item.depassementPlafond != null ? item.depassementPlafond / 100 : null,
     };
 

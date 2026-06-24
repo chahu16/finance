@@ -39,6 +39,8 @@ const depensesRecettesSchema = mongoose.Schema({
     fraisFixePeriode: { type: String, default: null },
     parts: { type: [Number], default: [50, 50] },
     sousCategorie: { type: mongoose.Schema.Types.ObjectId, ref: 'categories', default: null },
+    investissementRef: { type: mongoose.Schema.Types.ObjectId, ref: 'investissement', default: null },
+    montantBrutRetrait: { type: Number, default: null }, // centimes — montant brut sorti du contrat (vs recettes = net reçu)
     depassementPlafond: { type: Number, default: null }, // centimes — figé à la saisie (depenses - plafond actif à la date)
 }, { timestamps: true });
 

@@ -42,6 +42,12 @@ const fromApi = (doc) => {
         archived: !!doc.archive,
         categorie: doc.categorie || '',
         sousCategorie: doc.sousCategorie || '',
+        montants: (doc.montants ?? []).map(m => ({
+            montant: m.montant,
+            montantMensuel: m.montantMensuel ?? null,
+            parts: m.parts ?? null,
+            dateEffet: m.dateEffet ? new Date(m.dateEffet) : null,
+        })),
     };
 };
 

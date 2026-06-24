@@ -20,6 +20,8 @@ const fromApi = (doc) => ({
     fraisFixeRef: doc.fraisFixeRef ?? null,
     categorie: doc.categorie || '',
     sousCategorie: doc.sousCategorie || '',
+    investissementRef: doc.investissementRef ?? null,
+    montantBrutRetrait: doc.montantBrutRetrait ?? null,
     depenseReelle: doc.depenseReelle ?? null,
     depassementPlafond: doc.depassementPlafond ?? null,
 });
@@ -43,6 +45,8 @@ const toApi = (row) => ({
         row.pourcentageMoi != null ? 100 - row.pourcentageMoi : 50,
     ],
     sousCategorie: row.sousCategorie || null,
+    investissementRef: row.investissementRef || null,
+    montantBrutRetrait: row.montantBrutRetrait ?? null,
 });
 
 // Les deux endpoints (comptes normaux + compte joint) sont chargés en parallèle

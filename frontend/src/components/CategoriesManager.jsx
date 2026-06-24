@@ -24,7 +24,7 @@ const BUCKET_OPTIONS = [
     { value: 'envies', label: 'Envies' },
     { value: null, label: '—' },
 ];
-const AUTO_GROUPES = ['Revenues', 'Épargne'];
+const AUTO_GROUPES = ['Revenues', 'Épargne', 'Finances'];
 
 // ─── GroupCard ─────────────────────────────────────────────────────────────────
 function GroupCard({ groupe, type, subcategories, existingGroups, onAddSub, onDeleteRequest, onRenameSub, onRenameGroup, onChangeBucket, locked, canRegle503020 }) {
@@ -455,7 +455,7 @@ export function CategoriesManager({ categoriesRows, onRowsChange, onSave, onDele
                 onClose={() => setSnackbar(s => ({ ...s, open: false }))}
                 anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
             >
-                <Alert severity={snackbar.severity} onClose={() => setSnackbar(s => ({ ...s, open: false }))}>
+                <Alert severity={snackbar.severity} variant="filled" onClose={() => setSnackbar(s => ({ ...s, open: false }))}>
                     {snackbar.message}
                 </Alert>
             </Snackbar>

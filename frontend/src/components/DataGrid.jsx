@@ -45,12 +45,15 @@ import { focusCell, buildErrorMessage, getEditValues } from './utils/DataGridHel
 // Gère la validation, le vide-on-Échap (premier Échap vide, second annule la ligne)
 function GridEditDateCell({ id, value, field, shouldAutoFocus, onCancel }) {
     const apiRef = useGridApiContext();
+    const containerRef = React.useRef(null);
 
     const maxLimit = new Date();
     maxLimit.setHours(23, 59, 59, 999);
 
     const isValidDate = (d) => d instanceof Date && !isNaN(d.getTime());
     const dateValue = value && isValidDate(new Date(value)) ? new Date(value) : null;
+    const dateValueRef = React.useRef(dateValue);
+    dateValueRef.current = dateValue;
 
     const handleChange = (newValue) => {
         if (newValue === null || isValidDate(newValue)) {
@@ -58,38 +61,27 @@ function GridEditDateCell({ id, value, field, shouldAutoFocus, onCancel }) {
         }
     };
 
-    const handleKeyDown = (event) => {
-        if (event.key !== 'Escape') return;
-        event.stopPropagation();
-        event.preventDefault();
-
-        // Remonte jusqu'au conteneur des sections spinbutton
-        let container = event.target;
-        while (container && !container.className?.includes?.('MuiPickersSectionList-root')) {
-            container = container.parentElement;
-        }
-        const sections = container?.querySelectorAll('[role="spinbutton"]');
-        const values = sections ? Array.from(sections).map(s => s.getAttribute('aria-valuetext')) : [];
-        const estVide = values.every(v => v === 'Empty' || v === null);
-
-        if (!estVide) {
-            // Premier Échap : vide la date sans quitter l'édition
-            apiRef.current.setEditCellValue({ id, field, value: null });
-            sections && Array.from(sections).forEach((s, i) => {
-                s.setAttribute('aria-valuetext', 'Empty');
-                s.textContent = i === 0 ? 'DD' : i === 1 ? 'MM' : 'YYYY';
-            });
-            setTimeout(() => {
-                const cell = apiRef.current.getCellElement(id, field);
-                if (cell) cell.focus();
-            }, 50);
-        } else {
-            // Second Échap (champ déjà vide) : annule l'édition de la ligne
-            if (onCancel) onCancel(id);
-        }
-    };
+    // Phase capture : intercepte Échap avant MUI DatePicker ou le picker natif,
+    // mais uniquement si le focus est dans cette cellule date
+    // Premier Échap vide la date, second annule la ligne
+    React.useEffect(() => {
+        const onEscape = (e) => {
+            if (e.key !== 'Escape') return;
+            if (!containerRef.current?.contains(document.activeElement)) return;
+            e.stopPropagation();
+            e.preventDefault();
+            if (dateValueRef.current !== null) {
+                apiRef.current.setEditCellValue({ id, field, value: null });
+            } else {
+                if (onCancel) onCancel(id);
+            }
+        };
+        document.addEventListener('keydown', onEscape, true);
+        return () => document.removeEventListener('keydown', onEscape, true);
+    }, [id, field, onCancel, apiRef]);
 
     return (
+        <div ref={containerRef} style={{ width: '100%' }}>
         <LocalizationProvider dateAdapter={AdapterDateFns} adapterLocale={fr}>
             <DatePicker
                 value={dateValue}
@@ -102,7 +94,6 @@ function GridEditDateCell({ id, value, field, shouldAutoFocus, onCancel }) {
                 }}
                 slotProps={{
                     actionBar: { actions: ['today', 'clear', 'cancel'] },
-                    field: { onKeyDown: handleKeyDown },
                     textField: {
                         variant: 'standard',
                         fullWidth: true,
@@ -113,6 +104,7 @@ function GridEditDateCell({ id, value, field, shouldAutoFocus, onCancel }) {
                 }}
             />
         </LocalizationProvider>
+        </div>
     );
 }
 

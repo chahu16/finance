@@ -10,9 +10,18 @@ const gestionPlafonds = require('../controllers/gestion_plafond-notes-frais.js')
 const gestionStatsMensuelles = require('../controllers/gestion_stats.js');
 const gestionCategories = require('../controllers/gestion_categories.js');
 const gestionSeed = require('../controllers/gestion_seed.js');
+const gestionInvestissements = require('../controllers/gestion_investissements.js');
 
 const admin = requirePermission('finance.admin');
 const canImport = requirePermission('finance.import');
+
+// Investissement OU admin
+const canInvestissement = (req, res, next) => {
+    if (!req.permissions?.finance?.investissement && !req.permissions?.finance?.admin) {
+        return res.status(403).json({ message: 'Permission refusée' });
+    }
+    next();
+};
 
 router.use(express.json());
 
@@ -64,5 +73,16 @@ router.post('/suppression-plafond-notes-frais', admin, gestionPlafonds.suppressi
 router.post('/ajout-categorie', admin, gestionCategories.ajoutCategorie);
 router.post('/modification-categorie', admin, gestionCategories.modificationCategorie);
 router.post('/suppression-categorie', admin, gestionCategories.suppressionCategorie);
+
+// ─── Investissements ──────────────────────────────────────────────────────────
+router.get('/liste-investissements', canInvestissement, gestionInvestissements.listeInvestissements);
+router.post('/ajout-investissement', admin, gestionInvestissements.ajoutInvestissement);
+router.post('/modification-investissement', admin, gestionInvestissements.modificationInvestissement);
+router.post('/suppression-investissement', admin, gestionInvestissements.suppressionInvestissement);
+
+router.post('/lier-investissement-frais-fixe', canInvestissement, gestionInvestissements.lierFraisFixe);
+router.post('/ajout-investissement-historique', canInvestissement, gestionInvestissements.ajoutHistorique);
+router.post('/modification-investissement-historique', canInvestissement, gestionInvestissements.modificationHistorique);
+router.post('/suppression-investissement-historique', canInvestissement, gestionInvestissements.suppressionHistorique);
 
 module.exports = router;
