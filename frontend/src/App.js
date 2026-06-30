@@ -1,5 +1,8 @@
 import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
-import { randomId } from '@mui/x-data-grid-generator';
+import { useTodayKey } from './hooks/useTodayKey.js';
+import { useLocalStorage } from './hooks/useLocalStorage.js';
+import { useCompteRenameSync } from './hooks/useCompteRenameSync.js';
+import { useFraisFixesPlaceholders } from './hooks/useFraisFixesPlaceholders.js';
 import Box from '@mui/material/Box';
 import CircularProgress from '@mui/material/CircularProgress';
 import Button from '@mui/material/Button';
@@ -31,11 +34,11 @@ import { validateRow as validateCompteJointRow } from './components/utils/Compte
 import { validateRow as validateVirementRow } from './components/utils/VirementInternesValidation.js';
 import { validateRow as validateFraisFixeBaseRow } from './components/utils/FraisFixesValidation.js';
 import { GridEditSousCategorieCell } from './components/utils/SousCategorieCell.jsx';
-import { computeFraisFixeTrigger } from './components/utils/FraisFixesTrigger.js';
 import { DepensesRecettesColumns, snackbarMessages, initialSort, onFieldChange } from './components/gridConfigs/DepensesRecettesGrid.js';
 import { initAuth, getPermissionsFromToken } from './api/client.js';
 import { fetchDepensesRecettes, saveDepenseRecette, deleteDepenseRecette, rembourserNotesFrais } from './api/depensesRecettes.js';
 import RemboursementDiscordanceDialog from './components/RemboursementDiscordanceDialog.jsx';
+import ExportDialog from './components/ExportDialog.jsx';
 import { fetchCategories, saveCategorie, deleteCategorie } from './api/categories.js';
 import { CategoriesManager } from './components/CategoriesManager.jsx';
 import PlafondNotesFrais from './components/PlafondNotesFrais.jsx';
@@ -123,6 +126,7 @@ function App() {
     const [virementInternesRows, setVirementInternesRows] = useState([]);
     const [isLoading, setIsLoading] = useState(true);
     const [loadError, setLoadError] = useState(false);
+    const [exportDialog, setExportDialog] = useState({ open: false, source: 'normal' });
 
     // Reçoit les permissions depuis le portail parent (postMessage)
     useEffect(() => {
@@ -251,6 +255,12 @@ function App() {
         return savedRow;
     }, [catRemboursementFraisPro]);
 
+    const onUpdateRetraitInvest = useCallback(async (row) => {
+        const savedRow = await saveDepenseRecette(row, false);
+        setRows(prev => prev.map(r => r.id === savedRow.id ? savedRow : r));
+        return savedRow;
+    }, []);
+
     // Wrapper onRowsChange pour le DataGrid des dépenses/recettes normales.
     // Applique les mises à jour de remboursement en attente (pendingRemboursements) sur les rows
     // que le DataGrid vient de produire, avant de les passer à setRows.
@@ -279,196 +289,18 @@ function App() {
     const [showArchivedComptes, setShowArchivedComptes] = useState(false);
     const [showArchivedFraisFixes, setShowArchivedFraisFixes] = useState(false);
     const [expandedSection, setExpandedSection] = useState(null);
-    const [compteJointConfig, setCompteJointConfig] = useState(() => {
-        try {
-            const saved = localStorage.getItem('compteJointConfig');
-            if (saved) return JSON.parse(saved);
-        } catch {}
-        return { personne1: '', personne2: '', pourcentageDefaut: 50, pourcentageSoldeInitialMoi: null };
-    });
+    const [compteJointConfig, setCompteJointConfig] = useLocalStorage(
+        'compteJointConfig',
+        { personne1: '', personne2: '', pourcentageDefaut: 50, pourcentageSoldeInitialMoi: null }
+    );
     const [soldeInitialPctWarning, setSoldeInitialPctWarning] = useState(false);
+    const [budget503020Config, setBudget503020Config] = useLocalStorage('budget503020Config', { periode: '12mois' });
 
-    const [budget503020Config, setBudget503020Config] = useState(() => {
-        try {
-            const saved = localStorage.getItem('budget503020Config');
-            if (saved) return JSON.parse(saved);
-        } catch {}
-        return { periode: '12mois' };
-    });
+    const todayKey = useTodayKey();
 
-    useEffect(() => {
-        localStorage.setItem('budget503020Config', JSON.stringify(budget503020Config));
-    }, [budget503020Config]);
+    useFraisFixesPlaceholders(fraisFixesRows, setRows, todayKey);
 
-    useEffect(() => {
-        localStorage.setItem('compteJointConfig', JSON.stringify(compteJointConfig));
-    }, [compteJointConfig]);
-
-    // Clé du jour courant — change à minuit pour relancer le contrôle des frais fixes
-    const [todayKey, setTodayKey] = useState(() => {
-        const d = new Date();
-        return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
-    });
-    useEffect(() => {
-        const idRef = { current: null };
-        const scheduleNextMidnight = () => {
-            const now = new Date();
-            const midnight = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1);
-            idRef.current = setTimeout(() => {
-                const d = new Date();
-                setTodayKey(`${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`);
-                scheduleNextMidnight();
-            }, midnight - now);
-        };
-        scheduleNextMidnight();
-        return () => clearTimeout(idRef.current);
-    }, []);
-
-    // Ajoute les placeholders de frais fixes dès que la fenêtre de déclenchement est ouverte.
-    // Règles :
-    //   - Fenêtre Mensuel : J-2 jusqu'au J-2 du mois suivant (sans limite de durée).
-    //   - Un seul placeholder null-date par frais fixe par période (clé : fraisFixePeriode).
-    //   - Si le mois précédent n'est pas confirmé, le mois suivant crée quand même sa ligne.
-    //   - Aucune suppression automatique : le placeholder reste jusqu'à saisie d'une date.
-    // Cas particulier : placeholders sauvegardés avec fraisFixePeriode=null (données corrompues
-    //   d'une version antérieure). Si en fenêtre → recycler avec les bons montants/période.
-    //   Hors fenêtre → supprimer (artefact obsolète).
-    useEffect(() => {
-        const today = new Date();
-        today.setHours(0, 0, 0, 0);
-
-        setRows(prevRows => {
-            const toAdd = [];
-            const toFix = new Map(); // id → ligne corrigée (placeholder null-période recyclé)
-            const toRemoveIds = new Set(); // ids des artefacts null-période à supprimer
-
-            for (const ff of fraisFixesRows) {
-                if (ff.archived) continue;
-
-                const trigger = computeFraisFixeTrigger(ff, today);
-
-                const description = ff.description +
-                    (trigger?.occurrenceLabel ? ` (${trigger.occurrenceLabel})` : '');
-
-                // Détection d'un placeholder sauvegardé sans période (fraisFixePeriode == null)
-                const nullPeriodPlaceholder = prevRows.find(r =>
-                    r.compte === ff.compte &&
-                    r.fraisFixeRef === ff.id &&
-                    r.fraisFixe === true &&
-                    r.dateDepensesRecettes == null &&
-                    r.fraisFixePeriode == null
-                );
-
-                if (nullPeriodPlaceholder) {
-                    // Un placeholder avec la bonne période existe-t-il déjà ?
-                    const correctPeriodExists = trigger?.inTriggerWindow && prevRows.some(r =>
-                        r.compte === ff.compte &&
-                        r.fraisFixeRef === ff.id &&
-                        r.fraisFixe === true &&
-                        r.dateDepensesRecettes == null &&
-                        r.fraisFixePeriode === trigger.triggerPeriode
-                    );
-
-                    if (!trigger?.inTriggerWindow || correctPeriodExists) {
-                        // Hors fenêtre ou doublon avec un bon placeholder : supprimer l'artefact
-                        toRemoveIds.add(nullPeriodPlaceholder.id);
-                    } else {
-                        // En fenêtre et pas de bon placeholder : recycler avec les données correctes
-                        toFix.set(nullPeriodPlaceholder.id, {
-                            ...nullPeriodPlaceholder,
-                            description,
-                            depenses: ff.type === 'Dépense' ? ff.montant : 0,
-                            recettes: ff.type === 'Recette' ? ff.montant : 0,
-                            fraisFixePeriode: trigger.triggerPeriode,
-                        });
-                    }
-                    continue;
-                }
-
-                if (!trigger?.inTriggerWindow) continue;
-
-                // Déjà traité si :
-                //   a) un placeholder null-date de la MÊME période existe déjà (via fraisFixeRef ou description)
-                //   b) un paiement confirmé dans la période courante après l'ouverture existe
-                //      (via fraisFixeRef — fiable même si la description a changé — ou description)
-                // Un placeholder d'une période différente ne bloque pas la création.
-                const alreadyHandled = prevRows.some(r => {
-                    if (r.compte !== ff.compte) return false;
-                    const matchRef = r.fraisFixeRef === ff.id;
-                    const matchDesc = r.description === description;
-                    if (!matchRef && !matchDesc) return false;
-                    return (
-                        (r.fraisFixe === true && r.dateDepensesRecettes == null && r.fraisFixePeriode === trigger.triggerPeriode) ||
-                        (
-                            r.dateDepensesRecettes != null &&
-                            trigger.isDateInCurrentPeriod(r.dateDepensesRecettes) &&
-                            (
-                                (matchRef && r.fraisFixePeriode === trigger.triggerPeriode) ||
-                                new Date(r.dateDepensesRecettes) >= trigger.triggerDate
-                            )
-                        )
-                    );
-                });
-
-                if (!alreadyHandled) {
-                    toAdd.push({
-                        id: randomId(),
-                        compte: ff.compte,
-                        description,
-                        depenses: ff.type === 'Dépense' ? ff.montant : 0,
-                        recettes: ff.type === 'Recette' ? ff.montant : 0,
-                        notesFraisRemboursee: false,
-                        fraisFixe: true,
-                        chequeEnCours: false,
-                        depenseRecettesAMasquer: false,
-                        dateDepensesRecettes: null,
-                        pourcentageMoi: ff.pourcentageMoi ?? null,
-                        fraisFixePeriode: trigger.triggerPeriode,
-                        fraisFixeRef: ff.id,
-                        categorie: ff.categorie || '',
-                        sousCategorie: ff.sousCategorie || '',
-                    });
-                }
-            }
-
-            if (toAdd.length === 0 && toFix.size === 0 && toRemoveIds.size === 0) return prevRows;
-            let newRows = prevRows
-                .filter(r => !toRemoveIds.has(r.id))
-                .map(r => toFix.has(r.id) ? toFix.get(r.id) : r);
-            if (toAdd.length > 0) newRows = [...toAdd, ...newRows];
-            return newRows;
-        });
-    }, [fraisFixesRows, todayKey]);
-
-    const prevComptesRowsRef = useRef(comptesRows);
-    useEffect(() => {
-        const prev = prevComptesRowsRef.current;
-        const renames = [];
-        prev.forEach(oldC => {
-            const newC = comptesRows.find(c => c.id === oldC.id);
-            if (newC && newC.nomCompte !== oldC.nomCompte) {
-                renames.push({ oldName: oldC.nomCompte, newName: newC.nomCompte });
-            }
-        });
-        prevComptesRowsRef.current = comptesRows;
-        if (renames.length === 0) return;
-        setRows(prev => prev.map(r => {
-            const rename = renames.find(rn => rn.oldName === r.compte);
-            return rename ? { ...r, compte: rename.newName } : r;
-        }));
-        setFraisFixesRows(prev => prev.map(r => {
-            const rename = renames.find(rn => rn.oldName === r.compte);
-            return rename ? { ...r, compte: rename.newName } : r;
-        }));
-        setVirementInternesRows(prev => prev.map(v => {
-            let updated = { ...v };
-            for (const { oldName, newName } of renames) {
-                if (updated.compteSource === oldName) updated = { ...updated, compteSource: newName };
-                if (updated.compteDestination === oldName) updated = { ...updated, compteDestination: newName };
-            }
-            return updated;
-        }));
-    }, [comptesRows]);
+    useCompteRenameSync(comptesRows, { setRows, setFraisFixesRows, setVirementInternesRows });
 
     const validateCompteRowWithUniqueness = useCallback((row) => {
         const errors = validateCompteRow(row);
@@ -787,14 +619,26 @@ function App() {
 
     // Rows pré-filtrées par compte pour éviter les filter() inline dans le JSX
     // (chaque filter() crée une nouvelle référence → re-render inutile des StatCards)
+    // On réutilise les tableaux précédents quand le contenu n'a pas changé,
+    // ce qui permet à React.memo(StatCard) de sauter le re-render pour les comptes inchangés.
+    const rowsByComptePrevRef = useRef({});
     const rowsByCompte = useMemo(() => {
-        const map = {};
+        const newMap = {};
         rows.forEach(r => {
             if (r.isNew) return; // exclure les lignes en cours de saisie (non encore sauvegardées)
-            if (!map[r.compte]) map[r.compte] = [];
-            map[r.compte].push(r);
+            if (!newMap[r.compte]) newMap[r.compte] = [];
+            newMap[r.compte].push(r);
         });
-        return map;
+        const prev = rowsByComptePrevRef.current;
+        for (const compte of Object.keys(newMap)) {
+            const newArr = newMap[compte];
+            const prevArr = prev[compte];
+            if (prevArr && prevArr.length === newArr.length && newArr.every((r, i) => r === prevArr[i])) {
+                newMap[compte] = prevArr;
+            }
+        }
+        rowsByComptePrevRef.current = newMap;
+        return newMap;
     }, [rows]);
 
     // Filtre appliqué au DataGrid dépenses : masque les lignes liées à un compte archivé ou compte joint
@@ -893,7 +737,7 @@ function App() {
                         onSave={onSaveInvestissementHistorique}
                         onDeleteHistorique={onDeleteConfirmInvestissementHistorique}
                         onLierFraisFixe={handleLierFraisFixe}
-                        onUpdateRetrait={onSaveDepenseRecette}
+                        onUpdateRetrait={onUpdateRetraitInvest}
                     />
                 </Box>
             )}
@@ -916,6 +760,8 @@ function App() {
                         rowFilter={depensesRowFilter}
                         extraRowDefaults={{ categorie: '', sousCategorie: '' }}
                         showImport={canImport}
+                        showExport={canImport}
+                        onExportClick={() => setExportDialog({ open: true, source: 'normal' })}
                     />
                 </Box>
             )}
@@ -943,6 +789,8 @@ function App() {
                             rowFilter={(row) => row.compte === compteJointNom}
                             extraRowDefaults={compteJointExtraRowDefaults}
                             showImport={canImport}
+                            showExport={canImport}
+                            onExportClick={() => setExportDialog({ open: true, source: 'joint' })}
                         />
                     )}
                 </Box>
@@ -1214,6 +1062,17 @@ function App() {
         <RemboursementDiscordanceDialog
             info={remboursementInfo}
             onClose={() => setRemboursementInfo(null)}
+        />
+
+        <ExportDialog
+            open={exportDialog.open}
+            onClose={() => setExportDialog(d => ({ ...d, open: false }))}
+            source={exportDialog.source}
+            rows={rows}
+            fraisFixesRows={fraisFixesRows}
+            virementInternesRows={virementInternesRows}
+            compteJointNom={compteJointNom}
+            compteJointConfig={compteJointConfig}
         />
         </>
     );

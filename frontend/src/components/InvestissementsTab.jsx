@@ -12,15 +12,11 @@ import FormControl from '@mui/material/FormControl';
 import TextField from '@mui/material/TextField';
 import IconButton from '@mui/material/IconButton';
 import Tooltip from '@mui/material/Tooltip';
-import Button from '@mui/material/Button';
-import Snackbar from '@mui/material/Snackbar';
-import Alert from '@mui/material/Alert';
-import Dialog from '@mui/material/Dialog';
-import DialogActions from '@mui/material/DialogActions';
-import DialogContent from '@mui/material/DialogContent';
-import DialogContentText from '@mui/material/DialogContentText';
-import DialogTitle from '@mui/material/DialogTitle';
-import { deleteDialogSx } from '../styles/GridStyles.js';
+import { AppSnackbar } from './utils/AppSnackbar.jsx';
+import { AppDeleteDialog } from './utils/AppDeleteDialog.jsx';
+import { AppDatePicker } from './utils/AppDatePicker.jsx';
+import { useAppSnackbar } from '../hooks/useAppSnackbar.js';
+import { validateDate, validateMontantPositifOuNul } from './utils/validators.js';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import AddIcon from '@mui/icons-material/Add';
 import DeleteOutlineIcon from '@mui/icons-material/DeleteOutline';
@@ -29,10 +25,6 @@ import SaveIcon from '@mui/icons-material/Save';
 import CloseIcon from '@mui/icons-material/Close';
 import EditIcon from '@mui/icons-material/Edit';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
-import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
-import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
-import { DatePicker } from '@mui/x-date-pickers/DatePicker';
-import { fr } from 'date-fns/locale';
 import { Chart, registerables } from 'chart.js';
 
 Chart.register(...registerables);
@@ -46,14 +38,14 @@ function toDateKey(date) {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
 }
 
-function nbMoisDepuis(dateOuverture) {
-    if (!dateOuverture) return 1;
-    const open = dateOuverture instanceof Date ? dateOuverture : new Date(dateOuverture);
-    if (isNaN(open.getTime())) return 1;
-    const now = new Date();
-    let mois = (now.getFullYear() - open.getFullYear()) * 12 + (now.getMonth() - open.getMonth());
-    if (now.getDate() >= open.getDate()) mois += 1;
-    return Math.max(mois, 1);
+function nbMoisEntre(dateDebut, dateFin) {
+    if (!dateDebut || !dateFin) return 0;
+    const d1 = dateDebut instanceof Date ? dateDebut : new Date(dateDebut);
+    const d2 = dateFin instanceof Date ? dateFin : new Date(dateFin);
+    if (isNaN(d1.getTime()) || isNaN(d2.getTime())) return 0;
+    let mois = (d2.getFullYear() - d1.getFullYear()) * 12 + (d2.getMonth() - d1.getMonth());
+    if (d2.getDate() >= d1.getDate()) mois += 1;
+    return Math.max(mois, 0);
 }
 
 function lastValeurAt(histByInv, invId, targetDate) {
@@ -146,7 +138,7 @@ function versementsIntervalle(ff, dateDebut, dateFin) {
 
 // ─── Cartes récap globales ────────────────────────────────────────────────────
 
-function RecapCard({ label, value, colorKey }) {
+function RecapCard({ label, value, colorKey, subtitle }) {
     const c = COLOR[colorKey] || COLOR.neutre;
     return (
         <Box sx={{
@@ -164,13 +156,19 @@ function RecapCard({ label, value, colorKey }) {
             <Typography sx={{ fontSize: '1rem', fontWeight: 600, color: c.text }}>
                 {value}
             </Typography>
+            {subtitle && (
+                <Typography sx={{ fontSize: '0.7rem', color: '#aaa', mt: 0.25 }}>
+                    {subtitle}
+                </Typography>
+            )}
         </Box>
     );
 }
 
 // ─── Card par investissement ─────────────────────────────────────────────────
 
-function InvestissementCard({ inv, historiqueRows, retraits, fraisFixesFinances, onAddHistorique, onDeleteHistorique, onLierFraisFixe, onUpdateRetrait, showSnackbar }) {
+function InvestissementCard({ inv, historiqueRows, retraits, fraisFixesFinances, onAddHistorique, onDeleteHistorique, onLierFraisFixe, onUpdateRetrait }) {
+    const { snackbar, show: showSnackbar, handleClose: handleCloseSnackbar } = useAppSnackbar();
     const [accordionOpen, setAccordionOpen] = useState(false);
     const [addOpen, setAddOpen] = useState(false);
     const [addDate, setAddDate] = useState('');
@@ -198,17 +196,12 @@ function InvestissementCard({ inv, historiqueRows, retraits, fraisFixesFinances,
     const addValeurRef = useRef(null);
     const addSaveRef = useRef(null);
     const addCancelRef = useRef(null);
-    const originalEditDateRef = useRef('');
     const originalEditValeurRef = useRef('');
-    // Refs pour lecture sans stale-closure dans le handler Échap
-    const editDateStateRef = useRef('');
+    const pendingAddFocus = useRef(false);
+    // Ref pour lecture sans stale-closure dans le handler Échap
     const editValeurStateRef = useRef('');
-    editDateStateRef.current = editDate;
     editValeurStateRef.current = editValeur;
 
-    const maxDateLimit = useMemo(() => {
-        const d = new Date(); d.setHours(23, 59, 59, 999); return d;
-    }, []);
 
     // YYYY-MM-DD (local) → Date objet minuit local
     const parseDateLocal = (str) => {
@@ -269,17 +262,11 @@ function InvestissementCard({ inv, historiqueRows, retraits, fraisFixesFinances,
     };
 
     useEffect(() => {
-        if (addOpen && addDateRef.current) {
-            setTimeout(() => { addDateRef.current?.focus(); }, 30);
-        }
-    }, [addOpen]);
-
-    useEffect(() => {
         if (editingId === null) return;
         const onKeyDown = (e) => {
             if (e.key !== 'Escape') return;
             const activeEl = document.activeElement;
-            // Valeur : comparer la valeur DOM avec l'originale (input natif, fiable)
+            // Valeur : 1er Échap restaure la valeur originale
             if (activeEl === editValeurRef.current) {
                 if (editValeurStateRef.current !== originalEditValeurRef.current) {
                     e.stopPropagation(); e.preventDefault();
@@ -287,17 +274,8 @@ function InvestissementCard({ inv, historiqueRows, retraits, fraisFixesFinances,
                     return;
                 }
             }
-            // Date : le DatePicker utilise un portail pour le calendrier.
-            // Si le focus est dans le calendrier (hors container), on laisse le DatePicker
-            // gérer l'Échap (fermeture du calendrier). Si le focus est dans le champ texte
-            // (dans le container), on gère nous-mêmes.
-            if (editDateContainerRef.current?.contains(activeEl)) {
-                e.stopPropagation(); e.preventDefault();
-                if (editDateStateRef.current !== originalEditDateRef.current) {
-                    setEditDate(originalEditDateRef.current);
-                    return;
-                }
-            }
+            // Date : AppDatePicker gère lui-même l'Échap (clear → cancel)
+            if (editDateContainerRef.current?.contains(activeEl)) return;
             e.stopPropagation(); e.preventDefault();
             setEditingId(null);
             setEditDate('');
@@ -307,7 +285,7 @@ function InvestissementCard({ inv, historiqueRows, retraits, fraisFixesFinances,
         };
         document.addEventListener('keydown', onKeyDown, true);
         return () => document.removeEventListener('keydown', onKeyDown, true);
-    }, [editingId]);
+    }, [editingId, showSnackbar]);
 
     const myHistorique = useMemo(() =>
         [...historiqueRows.filter(h => h.investissementId === inv.id)]
@@ -321,13 +299,19 @@ function InvestissementCard({ inv, historiqueRows, retraits, fraisFixesFinances,
 
     const { montantInvestiNet, valeurActuelle, plusValue, performance } = useMemo(() => {
         const frais = parseFloat(inv.tauxFrais) || 0;
-        const mois = nbMoisDepuis(inv.dateOuverture);
-        const totalVerse = (parseFloat(inv.montantInvesti) || 0) * mois * (1 - frais / 100);
+        const lastDate = myHistorique.length > 0
+            ? (myHistorique[0].date instanceof Date ? myHistorique[0].date : new Date(myHistorique[0].date))
+            : null;
+        const debutVersements = inv.datePremierVersement || inv.dateOuverture;
+        const mois = nbMoisEntre(debutVersements, lastDate);
+        const sommeInitiale = parseFloat(inv.sommeInitiale) || 0;
+        const versements = (parseFloat(inv.montantInvesti) || 0) * mois * (1 - frais / 100);
+        const totalVerse = sommeInitiale + versements;
         const totalRetraits = retraits.reduce((s, r) => s + (r.montantBrutRetrait ?? r.recettes ?? 0), 0);
         const montantInvestiNet = Math.max(0, totalVerse - totalRetraits);
         const valeurActuelle = myHistorique.length > 0 ? (myHistorique[0].valeur ?? 0) : 0;
-        const plusValue = valeurActuelle - montantInvestiNet;
-        const performance = montantInvestiNet > 0 ? (plusValue / montantInvestiNet) * 100 : null;
+        const plusValue = valeurActuelle + totalRetraits - totalVerse;
+        const performance = totalVerse > 0 ? (plusValue / totalVerse) * 100 : null;
         return { montantInvestiNet, valeurActuelle, plusValue, performance };
     }, [inv, myHistorique, retraits]);
 
@@ -336,11 +320,24 @@ function InvestissementCard({ inv, historiqueRows, retraits, fraisFixesFinances,
     const historiqueAvecDelta = useMemo(() => {
         return myHistorique.map((h, idx) => {
             const prev = myHistorique[idx + 1];
-            if (!prev) return { ...h, deltaReel: null, deltaReelPct: null };
+            if (!prev) {
+                const frais = parseFloat(inv.tauxFrais) || 0;
+                const firstDate = h.date instanceof Date ? h.date : new Date(h.date);
+                const debutVersements = inv.datePremierVersement || inv.dateOuverture;
+                const moisFirst = nbMoisEntre(debutVersements, firstDate);
+                const sommeInitiale = parseFloat(inv.sommeInitiale) || 0;
+                const versementsFirst = (parseFloat(inv.montantInvesti) || 0) * moisFirst * (1 - frais / 100);
+                const totalVerseFirst = sommeInitiale + versementsFirst;
+                if (totalVerseFirst <= 0) return { ...h, deltaReel: null, deltaReelPct: null };
+                const deltaReel = h.valeur - totalVerseFirst;
+                const deltaReelPct = (deltaReel / totalVerseFirst) * 100;
+                return { ...h, deltaReel, deltaReelPct };
+            }
             const deltaBrut = h.valeur - prev.valeur;
             const prevDate = prev.date instanceof Date ? prev.date : new Date(prev.date);
             const currDate = h.date instanceof Date ? h.date : new Date(h.date);
-            const vers = linkedFF ? versementsIntervalle(linkedFF, prevDate, currDate) : 0;
+            const fraisPct = parseFloat(inv.tauxFrais) || 0;
+            const vers = linkedFF ? versementsIntervalle(linkedFF, prevDate, currDate) * (1 - fraisPct / 100) : 0;
             const rachatsInterval = retraits
                 .filter(r => {
                     const rd = r.dateDepensesRecettes instanceof Date ? r.dateDepensesRecettes : new Date(r.dateDepensesRecettes);
@@ -348,7 +345,8 @@ function InvestissementCard({ inv, historiqueRows, retraits, fraisFixesFinances,
                 })
                 .reduce((s, r) => s + (r.montantBrutRetrait ?? r.recettes ?? 0), 0);
             const deltaReel = deltaBrut - vers + rachatsInterval;
-            const deltaReelPct = prev.valeur > 0 ? (deltaReel / prev.valeur) * 100 : null;
+            const base = prev.valeur + vers - rachatsInterval;
+            const deltaReelPct = base > 0 ? (deltaReel / base) * 100 : null;
             return { ...h, deltaReel, deltaReelPct };
         });
     }, [myHistorique, linkedFF, retraits]);
@@ -360,23 +358,11 @@ function InvestissementCard({ inv, historiqueRows, retraits, fraisFixesFinances,
 
     const validateHistorique = (date, valeur) => {
         const errors = {};
-        const today = new Date(); today.setHours(23, 59, 59, 999);
-        if (!date) {
-            errors.date = 'La date est obligatoire';
-        } else {
-            const d = date instanceof Date ? date : parseDateLocal(date);
-            if (!d || isNaN(d.getTime())) {
-                errors.date = 'Date invalide';
-            } else if (d > today) {
-                errors.date = 'La date ne peut pas être dans le futur';
-            }
-        }
-        const v = parseFloat(valeur);
-        if (valeur === '' || valeur === null || valeur === undefined || String(valeur).trim() === '') {
-            errors.valeur = 'La valeur est obligatoire';
-        } else if (isNaN(v) || v < 0) {
-            errors.valeur = 'La valeur doit être positive ou nulle';
-        }
+        const dateInput = date instanceof Date ? date : parseDateLocal(date);
+        const errDate = validateDate(dateInput);
+        if (errDate) errors.date = errDate;
+        const errValeur = validateMontantPositifOuNul(valeur);
+        if (errValeur) errors.valeur = errValeur;
         return errors;
     };
 
@@ -384,7 +370,7 @@ function InvestissementCard({ inv, historiqueRows, retraits, fraisFixesFinances,
         const errors = validateHistorique(addDate, addValeur);
         if (Object.keys(errors).length > 0) {
             setAddErrors(errors);
-            showSnackbar(Object.values(errors)[0], 'error');
+            showSnackbar(Object.values(errors).join(' · '), 'error');
             return;
         }
         setSaving(true);
@@ -421,11 +407,24 @@ function InvestissementCard({ inv, historiqueRows, retraits, fraisFixesFinances,
 
     const handleCancelDelete = () => setDeleteTarget(null);
 
+    const focusAddDate = () => {
+        addDateContainerRef.current?.querySelector('input')?.focus();
+    };
+
     const handleOpenAdd = (e) => {
         e.stopPropagation();
-        setAccordionOpen(true);
-        setAddOpen(true);
-        setAddErrors({});
+        if (accordionOpen) {
+            setAddOpen(true);
+            setAddErrors({});
+            // Accordion déjà ouvert : focus après le prochain paint
+            requestAnimationFrame(() => requestAnimationFrame(focusAddDate));
+        } else {
+            pendingAddFocus.current = true;
+            setAccordionOpen(true);
+            setAddOpen(true);
+            setAddErrors({});
+            // Focus déclenché par onEntered (fin de l'animation Collapse)
+        }
     };
 
     const handleCopyHistorique = (h, e) => {
@@ -437,8 +436,14 @@ function InvestissementCard({ inv, historiqueRows, retraits, fraisFixesFinances,
         setAddValeur(String(h.valeur));
         setAddDate('');
         setAddErrors({});
-        setAddOpen(true);
-        setAccordionOpen(true);
+        if (accordionOpen) {
+            setAddOpen(true);
+            requestAnimationFrame(() => requestAnimationFrame(focusAddDate));
+        } else {
+            pendingAddFocus.current = true;
+            setAccordionOpen(true);
+            setAddOpen(true);
+        }
     };
 
     const handleStartEdit = (h) => {
@@ -447,7 +452,6 @@ function InvestissementCard({ inv, historiqueRows, retraits, fraisFixesFinances,
         const valeurStr = String(h.valeur);
         setEditDate(dateStr);
         setEditValeur(valeurStr);
-        originalEditDateRef.current = dateStr;
         originalEditValeurRef.current = valeurStr;
         setEditingId(h.id);
         setEditErrors({});
@@ -459,7 +463,7 @@ function InvestissementCard({ inv, historiqueRows, retraits, fraisFixesFinances,
         const errors = validateHistorique(editDate, editValeur);
         if (Object.keys(errors).length > 0) {
             setEditErrors(errors);
-            showSnackbar(Object.values(errors)[0], 'error');
+            showSnackbar(Object.values(errors).join(' · '), 'error');
             return;
         }
         setEditSaving(true);
@@ -485,27 +489,13 @@ function InvestissementCard({ inv, historiqueRows, retraits, fraisFixesFinances,
 
     return (
         <>
-        <Dialog
+        <AppDeleteDialog
             open={!!deleteTarget}
-            onClose={handleCancelDelete}
-            transitionDuration={0}
-            sx={deleteDialogSx}
-            onKeyDown={e => {
-                if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); handleConfirmDelete(); }
-                if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); handleCancelDelete(); }
-            }}
+            onConfirm={handleConfirmDelete}
+            onCancel={handleCancelDelete}
         >
-            <DialogTitle>Confirmer la suppression</DialogTitle>
-            <DialogContent>
-                <DialogContentText>
-                    Voulez-vous vraiment supprimer la valorisation du <strong>{formatDateFR(deleteTarget?.date)}</strong> ?
-                </DialogContentText>
-            </DialogContent>
-            <DialogActions>
-                <Button onClick={handleCancelDelete} color="inherit">Annuler</Button>
-                <Button onClick={handleConfirmDelete} color="error" variant="contained">Supprimer</Button>
-            </DialogActions>
-        </Dialog>
+            Voulez-vous vraiment supprimer la valorisation du <strong>{formatDateFR(deleteTarget?.date)}</strong> ?
+        </AppDeleteDialog>
         <Box sx={{
             backgroundColor: '#fff',
             borderRadius: '8px',
@@ -535,9 +525,9 @@ function InvestissementCard({ inv, historiqueRows, retraits, fraisFixesFinances,
                     <Typography sx={{ fontSize: '0.875rem', color: '#555' }}>Montant investi net :</Typography>
                     <Box sx={{ textAlign: 'right' }}>
                         <Typography sx={{ fontSize: '0.875rem', color: '#1a1a1a' }}>{formatEuro(montantInvestiNet)}</Typography>
-                        {inv.dateOuverture && (
+                        {hasHistorique && (
                             <Typography sx={{ fontSize: '0.7rem', color: '#aaa' }}>
-                                depuis le {formatDateFR(inv.dateOuverture)}
+                                calculé au {formatDateFR(myHistorique[0].date)}
                             </Typography>
                         )}
                     </Box>
@@ -704,6 +694,14 @@ function InvestissementCard({ inv, historiqueRows, retraits, fraisFixesFinances,
                 disableGutters
                 expanded={accordionOpen}
                 onChange={(_, exp) => setAccordionOpen(exp)}
+                TransitionProps={{
+                    onEntered: () => {
+                        if (pendingAddFocus.current) {
+                            pendingAddFocus.current = false;
+                            focusAddDate();
+                        }
+                    },
+                }}
                 sx={{
                     mt: 1.5,
                     '&::before': { display: 'none' },
@@ -728,53 +726,52 @@ function InvestissementCard({ inv, historiqueRows, retraits, fraisFixesFinances,
                 </AccordionSummary>
                 <AccordionDetails sx={{ px: '18px', pt: 0, pb: '12px' }}>
                     {addOpen && (
-                        <Box sx={{ display: 'flex', gap: 0.5, mb: 1.5, alignItems: 'center' }}>
-                            <div ref={addDateContainerRef} style={{ flex: '1 1 130px' }}>
-                            <LocalizationProvider dateAdapter={AdapterDateFns} adapterLocale={fr}>
-                                <DatePicker
-                                    value={parseDateLocal(addDate)}
-                                    onChange={newValue => {
-                                        setAddDate(newValue instanceof Date && !isNaN(newValue) ? dateToStr(newValue) : '');
-                                        setAddErrors(prev => ({ ...prev, date: undefined }));
-                                    }}
-                                    maxDate={maxDateLimit}
-                                    localeText={{ todayButtonLabel: "Aujourd'hui", clearButtonLabel: "Effacer", cancelButtonLabel: "Annuler" }}
-                                    slotProps={{
-                                        actionBar: { actions: ['today', 'clear', 'cancel'] },
-                                        textField: {
-                                            size: 'small',
-                                            fullWidth: true,
-                                            error: !!addErrors.date,
-                                            helperText: addErrors.date,
-                                            inputProps: { style: { fontSize: '0.8rem' } },
-                                            inputRef: addDateRef,
-                                            onKeyDown: e => {
-                                                if (e.key === 'Enter') { e.preventDefault(); handleAdd(); }
-                                                if (e.key === 'Tab' && !e.shiftKey) { e.preventDefault(); addValeurRef.current?.focus(); addValeurRef.current?.select(); }
-                                            },
-                                        },
-                                    }}
-                                />
-                            </LocalizationProvider>
-                            </div>
+                        <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 0.5, mb: 1.5, alignItems: 'center' }}>
+                            <Box ref={addDateContainerRef} sx={{ overflow: 'hidden', minWidth: 0 }}>
+                            <AppDatePicker
+                                value={parseDateLocal(addDate)}
+                                onChange={newValue => {
+                                    setAddDate(newValue instanceof Date && !isNaN(newValue) ? dateToStr(newValue) : '');
+                                    setAddErrors(prev => ({ ...prev, date: undefined }));
+                                }}
+                                onSave={handleAdd}
+                                onCancel={() => { setAddOpen(false); setAddDate(''); setAddValeur(''); setAddErrors({}); showSnackbar('Édition annulée', 'warning'); }}
+                                onTabNext={() => { addValeurRef.current?.focus(); addValeurRef.current?.select(); }}
+                                error={!!addErrors.date}
+                                helperText={addErrors.date}
+                                inputRef={addDateRef}
+                                slotProps={{ textField: { inputProps: { style: { fontSize: '0.8rem' } }, sx: { minWidth: 0, '& .MuiPickersSectionList-root': { fontSize: '0.8rem' } } } }}
+                            />
+                            </Box>
                             <TextField
                                 type="number"
                                 size="small"
+                                fullWidth
                                 placeholder="Valeur (€)"
                                 value={addValeur}
                                 onChange={e => { setAddValeur(e.target.value); setAddErrors(prev => ({ ...prev, valeur: undefined })); }}
                                 error={!!addErrors.valeur}
                                 helperText={addErrors.valeur}
-                                sx={{ flex: '1 1 90px' }}
+                                sx={{ minWidth: 0, ...(addErrors.valeur && { '& .MuiInputBase-root': { backgroundColor: 'rgba(211, 47, 47, 0.08)' } }) }}
                                 inputProps={{ style: { fontSize: '0.8rem' } }}
                                 inputRef={addValeurRef}
                                 onKeyDown={e => {
                                     if (e.key === 'Enter') { e.preventDefault(); handleAdd(); }
+                                    if (e.key === 'Escape') {
+                                        e.preventDefault();
+                                        if (addValeur !== '') {
+                                            setAddValeur('');
+                                            setAddErrors(prev => ({ ...prev, valeur: undefined }));
+                                        } else {
+                                            setAddOpen(false); setAddDate(''); setAddErrors({});
+                                            showSnackbar('Édition annulée', 'warning');
+                                        }
+                                    }
                                     if (e.key === 'Tab' && !e.shiftKey) { e.preventDefault(); addSaveRef.current?.focus(); }
                                     if (e.key === 'Tab' && e.shiftKey) { e.preventDefault(); addDateRef.current?.focus(); addDateRef.current?.select?.(); }
                                 }}
                             />
-                            <Box sx={{ display: 'flex', flexShrink: 0 }}>
+                            <Box sx={{ display: 'flex' }}>
                                 <Tooltip title="Enregistrer">
                                     <span>
                                         <IconButton
@@ -797,7 +794,7 @@ function InvestissementCard({ inv, historiqueRows, retraits, fraisFixesFinances,
                                     <IconButton
                                         ref={addCancelRef}
                                         size="small"
-                                        onClick={() => { setAddOpen(false); setAddDate(''); setAddValeur(''); setAddErrors({}); }}
+                                        onClick={() => { setAddOpen(false); setAddDate(''); setAddValeur(''); setAddErrors({}); showSnackbar('Édition annulée', 'warning'); }}
                                         sx={{ p: 0.5 }}
                                         onKeyDown={e => {
                                             if (e.key === 'Tab' && !e.shiftKey) { e.preventDefault(); addDateRef.current?.focus(); addDateRef.current?.select?.(); }
@@ -838,43 +835,32 @@ function InvestissementCard({ inv, historiqueRows, retraits, fraisFixesFinances,
                                 }}
                             >
                                 {isEditing ? (
-                                    <Box sx={{ display: 'flex', gap: 0.5, alignItems: 'center' }}>
-                                        <div ref={editDateContainerRef} style={{ flex: '1 1 130px' }}>
-                                        <LocalizationProvider dateAdapter={AdapterDateFns} adapterLocale={fr}>
-                                            <DatePicker
-                                                value={parseDateLocal(editDate)}
-                                                onChange={newValue => {
-                                                    setEditDate(newValue instanceof Date && !isNaN(newValue) ? dateToStr(newValue) : '');
-                                                    setEditErrors(prev => ({ ...prev, date: undefined }));
-                                                }}
-                                                maxDate={maxDateLimit}
-                                                localeText={{ todayButtonLabel: "Aujourd'hui", clearButtonLabel: "Effacer", cancelButtonLabel: "Annuler" }}
-                                                slotProps={{
-                                                    actionBar: { actions: ['today', 'clear', 'cancel'] },
-                                                    textField: {
-                                                        size: 'small',
-                                                        fullWidth: true,
-                                                        error: !!editErrors.date,
-                                                        helperText: editErrors.date,
-                                                        inputProps: { style: { fontSize: '0.8rem' } },
-                                                        inputRef: editDateRef,
-                                                        onKeyDown: e => {
-                                                            if (e.key === 'Enter') { e.preventDefault(); handleEditSave(h); }
-                                                            if (e.key === 'Tab' && !e.shiftKey) { e.preventDefault(); editValeurRef.current?.focus(); editValeurRef.current?.select(); }
-                                                        },
-                                                    },
-                                                }}
-                                            />
-                                        </LocalizationProvider>
-                                        </div>
+                                    <Box sx={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 0.5, alignItems: 'center' }}>
+                                        <Box ref={editDateContainerRef} sx={{ overflow: 'hidden', minWidth: 0 }}>
+                                        <AppDatePicker
+                                            value={parseDateLocal(editDate)}
+                                            onChange={newValue => {
+                                                setEditDate(newValue instanceof Date && !isNaN(newValue) ? dateToStr(newValue) : '');
+                                                setEditErrors(prev => ({ ...prev, date: undefined }));
+                                            }}
+                                            onSave={() => handleEditSave(h)}
+                                            onCancel={handleEditCancel}
+                                            onTabNext={() => { editValeurRef.current?.focus(); editValeurRef.current?.select(); }}
+                                            error={!!editErrors.date}
+                                            helperText={editErrors.date}
+                                            inputRef={editDateRef}
+                                            slotProps={{ textField: { inputProps: { style: { fontSize: '0.8rem' } }, sx: { minWidth: 0, '& .MuiPickersSectionList-root': { fontSize: '0.8rem' } } } }}
+                                        />
+                                        </Box>
                                         <TextField
                                             type="number"
                                             size="small"
+                                            fullWidth
                                             value={editValeur}
                                             onChange={e => { setEditValeur(e.target.value); setEditErrors(prev => ({ ...prev, valeur: undefined })); }}
                                             error={!!editErrors.valeur}
                                             helperText={editErrors.valeur}
-                                            sx={{ flex: '1 1 90px' }}
+                                            sx={{ minWidth: 0, ...(editErrors.valeur && { '& .MuiInputBase-root': { backgroundColor: 'rgba(211, 47, 47, 0.08)' } }) }}
                                             inputProps={{ style: { fontSize: '0.8rem' } }}
                                             inputRef={editValeurRef}
                                             onKeyDown={e => {
@@ -883,7 +869,7 @@ function InvestissementCard({ inv, historiqueRows, retraits, fraisFixesFinances,
                                                 if (e.key === 'Tab' && e.shiftKey) { e.preventDefault(); editDateRef.current?.focus(); editDateRef.current?.select?.(); }
                                             }}
                                         />
-                                        <Box sx={{ display: 'flex', flexShrink: 0 }}>
+                                        <Box sx={{ display: 'flex' }}>
                                             <Tooltip title="Enregistrer">
                                                 <span>
                                                     <IconButton
@@ -960,6 +946,7 @@ function InvestissementCard({ inv, historiqueRows, retraits, fraisFixesFinances,
                 </AccordionDetails>
             </Accordion>
         </Box>
+        <AppSnackbar snackbar={snackbar} onClose={handleCloseSnackbar} />
         </>
     );
 }
@@ -1109,13 +1096,19 @@ export default function InvestissementsTab({
     onLierFraisFixe,
     onUpdateRetrait,
 }) {
-    const { totalInvesti, valeurTotale, plusValue, performance } = useMemo(() => {
-        const lastValByInv = {};
+    const { totalInvesti, valeurTotale, plusValue, performance, lastDateGlobal } = useMemo(() => {
+        const lastByInv = {};
         for (const h of historiqueRows) {
             const dk = toDateKey(h.date);
             if (!dk) continue;
-            const cur = lastValByInv[h.investissementId];
-            if (!cur || dk > cur.dateKey) lastValByInv[h.investissementId] = { dateKey: dk, valeur: h.valeur };
+            const cur = lastByInv[h.investissementId];
+            if (!cur || dk > cur.dateKey) {
+                lastByInv[h.investissementId] = {
+                    dateKey: dk,
+                    valeur: h.valeur,
+                    date: h.date instanceof Date ? h.date : new Date(h.date),
+                };
+            }
         }
         const retraitsTotauxByInv = {};
         for (const r of depensesRecettesRows) {
@@ -1125,17 +1118,28 @@ export default function InvestissementsTab({
         }
         let totalInvesti = 0;
         let valeurTotale = 0;
+        let totalVerseGlobal = 0;
+        let totalRetraitsGlobal = 0;
+        let lastDateGlobal = null;
         for (const inv of investissementsRows) {
             const frais = parseFloat(inv.tauxFrais) || 0;
-            const mois = nbMoisDepuis(inv.dateOuverture);
-            const totalVerse = (parseFloat(inv.montantInvesti) || 0) * mois * (1 - frais / 100);
+            const lastEntry = lastByInv[inv.id];
+            const lastDate = lastEntry?.date ?? null;
+            const debutVersements = inv.datePremierVersement || inv.dateOuverture;
+            const mois = nbMoisEntre(debutVersements, lastDate);
+            const sommeInitiale = parseFloat(inv.sommeInitiale) || 0;
+            const versements = (parseFloat(inv.montantInvesti) || 0) * mois * (1 - frais / 100);
+            const totalVerse = sommeInitiale + versements;
             const totalRetraits = retraitsTotauxByInv[inv.id] ?? 0;
             totalInvesti += Math.max(0, totalVerse - totalRetraits);
-            valeurTotale += lastValByInv[inv.id]?.valeur ?? 0;
+            valeurTotale += lastEntry?.valeur ?? 0;
+            totalVerseGlobal += totalVerse;
+            totalRetraitsGlobal += totalRetraits;
+            if (lastDate && (!lastDateGlobal || lastDate > lastDateGlobal)) lastDateGlobal = lastDate;
         }
-        const plusValue = valeurTotale - totalInvesti;
-        const performance = totalInvesti > 0 ? (plusValue / totalInvesti) * 100 : null;
-        return { totalInvesti, valeurTotale, plusValue, performance };
+        const plusValue = valeurTotale + totalRetraitsGlobal - totalVerseGlobal;
+        const performance = totalVerseGlobal > 0 ? (plusValue / totalVerseGlobal) * 100 : null;
+        return { totalInvesti, valeurTotale, plusValue, performance, lastDateGlobal };
     }, [investissementsRows, historiqueRows, depensesRecettesRows]);
 
     const epargneIds = useMemo(
@@ -1162,21 +1166,14 @@ export default function InvestissementsTab({
     const plusValueColorKey = valeurTotale === 0 ? 'neutre' : plusValue > 0 ? 'vert' : plusValue < 0 ? 'rouge' : 'neutre';
     const perfColorKey = performance == null ? 'neutre' : performance > 0 ? 'vert' : performance < 0 ? 'rouge' : 'neutre';
 
-    const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' });
-    const showSnackbar = (message, severity = 'success') => setSnackbar({ open: true, message, severity });
-    const handleCloseSnackbar = (_, reason) => {
-        if (reason === 'clickaway') return;
-        setSnackbar(prev => ({ ...prev, open: false }));
-    };
-
     return (
         <Box sx={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
             {/* ─── Récap global ──────────────────────────────────────────── */}
             <Box sx={{ display: 'flex', gap: 2, flexWrap: 'wrap' }}>
-                <RecapCard label="Total investi net" value={formatEuro(totalInvesti)} colorKey="neutre" />
-                <RecapCard label="Valeur actuelle totale" value={formatEuro(valeurTotale)} colorKey="neutre" />
-                <RecapCard label="Plus-value globale" value={formatEuro(valeurTotale > 0 ? plusValue : null)} colorKey={plusValueColorKey} />
-                <RecapCard label="Performance globale" value={formatPct(performance)} colorKey={perfColorKey} />
+                <RecapCard label="Total investi net" value={formatEuro(totalInvesti)} colorKey="neutre" subtitle={lastDateGlobal ? `calculé au ${formatDateFR(lastDateGlobal)}` : undefined} />
+                <RecapCard label="Valeur actuelle totale" value={formatEuro(valeurTotale)} colorKey="neutre" subtitle={lastDateGlobal ? `au ${formatDateFR(lastDateGlobal)}` : undefined} />
+                <RecapCard label="Plus-value globale" value={formatEuro(valeurTotale > 0 ? plusValue : null)} colorKey={plusValueColorKey} subtitle={lastDateGlobal ? `au ${formatDateFR(lastDateGlobal)}` : undefined} />
+                <RecapCard label="Performance globale" value={formatPct(performance)} colorKey={perfColorKey} subtitle={lastDateGlobal ? `au ${formatDateFR(lastDateGlobal)}` : undefined} />
             </Box>
 
             {/* ─── Cards par investissement ───────────────────────────────── */}
@@ -1192,7 +1189,6 @@ export default function InvestissementsTab({
                         onDeleteHistorique={onDeleteHistorique}
                         onLierFraisFixe={onLierFraisFixe}
                         onUpdateRetrait={onUpdateRetrait}
-                        showSnackbar={showSnackbar}
                     />
                 ))}
             </Box>
@@ -1217,11 +1213,6 @@ export default function InvestissementsTab({
                 </Paper>
             </Box>
 
-            <Snackbar open={snackbar.open} autoHideDuration={3000} onClose={handleCloseSnackbar} anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}>
-                <Alert onClose={handleCloseSnackbar} severity={snackbar.severity} variant="filled" sx={{ width: '100%' }}>
-                    {snackbar.message}
-                </Alert>
-            </Snackbar>
         </Box>
     );
 }

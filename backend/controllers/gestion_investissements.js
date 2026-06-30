@@ -31,7 +31,8 @@ const formaterInvPourFront = (doc) => {
         montantInvesti: (item.montantInvesti ?? 0) / 100,
         tauxFrais: item.tauxFrais ?? 0,
         dateOuverture: item.dateOuverture ? item.dateOuverture.toISOString() : null,
-        notes: item.notes ?? '',
+        sommeInitiale: (item.sommeInitiale ?? 0) / 100,
+        datePremierVersement: item.datePremierVersement ? item.datePremierVersement.toISOString() : null,
         fraisFixeRef: item.fraisFixeRef?.toString() || null,
         historique: (item.historique ?? []).map(h => formaterHistEntry(h, item._id)),
     };
@@ -50,7 +51,7 @@ exports.listeInvestissements = async (req, res) => {
 
 exports.ajoutInvestissement = async (req, res) => {
     try {
-        const { nom, type, courtier, montantInvesti, tauxFrais, dateOuverture, notes } = req.body;
+        const { nom, type, courtier, montantInvesti, tauxFrais, dateOuverture, sommeInitiale, datePremierVersement } = req.body;
         const doc = await Investissement.create({
             userId: req.userId,
             nom: nom?.trim(),
@@ -59,7 +60,8 @@ exports.ajoutInvestissement = async (req, res) => {
             montantInvesti: toCents(montantInvesti ?? 0),
             tauxFrais: parseFloat(tauxFrais) || 0,
             dateOuverture: parseDate(dateOuverture),
-            notes: notes?.trim() || '',
+            sommeInitiale: toCents(sommeInitiale ?? 0),
+            datePremierVersement: parseDate(datePremierVersement),
             historique: [],
         });
         res.status(200).json(formaterInvPourFront(doc));
@@ -70,7 +72,7 @@ exports.ajoutInvestissement = async (req, res) => {
 
 exports.modificationInvestissement = async (req, res) => {
     try {
-        const { id, nom, type, courtier, montantInvesti, tauxFrais, dateOuverture, notes } = req.body;
+        const { id, nom, type, courtier, montantInvesti, tauxFrais, dateOuverture, sommeInitiale, datePremierVersement } = req.body;
         const doc = await Investissement.findOneAndUpdate(
             { _id: id, userId: req.userId },
             {
@@ -81,7 +83,8 @@ exports.modificationInvestissement = async (req, res) => {
                     montantInvesti: toCents(montantInvesti ?? 0),
                     tauxFrais: parseFloat(tauxFrais) || 0,
                     dateOuverture: parseDate(dateOuverture),
-                    notes: notes?.trim() || '',
+                    sommeInitiale: toCents(sommeInitiale ?? 0),
+                    datePremierVersement: parseDate(datePremierVersement),
                 },
             },
             { returnDocument: 'after' }

@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, memo } from 'react';
 import Box from '@mui/material/Box';
 import Divider from '@mui/material/Divider';
 import Typography from '@mui/material/Typography';
@@ -91,4 +91,4 @@ function StatCard({ compte, rows, compteData, virementInternesRows = [] }) {
     );
 }
 
-export default StatCard;
+export default memo(StatCard);

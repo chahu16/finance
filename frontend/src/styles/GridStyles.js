@@ -67,8 +67,12 @@ export const gridStyle = {
     "& .MuiPickersInputBase-root": {
         borderBottom: "none !important",
     },
-    // Cellule en erreur même quand focusée
+    // Cellule en erreur même quand focusée (focus-within a spécificité +1 → on surclasse avec même règle)
     "& .cell-error.MuiDataGrid-cell--editing": {
+        backgroundColor: "rgba(211, 47, 47, 0.08) !important",
+        boxShadow: "inset 0 0 0 1px rgba(211, 47, 47, 0.3) !important",
+    },
+    "& .cell-error.MuiDataGrid-cell--editing:focus-within": {
         backgroundColor: "rgba(211, 47, 47, 0.08) !important",
         boxShadow: "inset 0 0 0 1px rgba(211, 47, 47, 0.3) !important",
     },

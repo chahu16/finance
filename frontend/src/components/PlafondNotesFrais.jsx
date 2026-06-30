@@ -8,6 +8,10 @@ import FormControlLabel from '@mui/material/FormControlLabel';
 import Paper from '@mui/material/Paper';
 import TextField from '@mui/material/TextField';
 import Typography from '@mui/material/Typography';
+import { AppDatePicker } from './utils/AppDatePicker.jsx';
+import { AppSnackbar } from './utils/AppSnackbar.jsx';
+import { useAppSnackbar } from '../hooks/useAppSnackbar.js';
+import { validateDate, validateMontantPositif } from './utils/validators.js';
 import { fetchPlafonds, ajouterPlafond } from '../api/plafondNotesFrais.js';
 
 const VIDE = { repas: [], hotelPDJ: [], soireeEtape: [] };
@@ -22,17 +26,18 @@ const afficherMontant = (entree) =>
     entree ? `${entree.montantMax.toFixed(2)} €` : 'Aucun';
 
 export default function PlafondNotesFrais() {
+    const { snackbar, show: showSnackbar, handleClose: handleCloseSnackbar } = useAppSnackbar();
     const [plafonds, setPlafonds] = useState(VIDE);
     const [loading, setLoading] = useState(true);
     const [globalError, setGlobalError] = useState('');
 
     const [repasMontant, setRepasMontant] = useState('');
-    const [repasDate, setRepasDate] = useState('');
+    const [repasDate, setRepasDate] = useState(null);
     const [repasErrors, setRepasErrors] = useState({});
     const [repasSaving, setRepasSaving] = useState(false);
 
     const [hotelMontant, setHotelMontant] = useState('');
-    const [hotelDate, setHotelDate] = useState('');
+    const [hotelDate, setHotelDate] = useState(null);
     const [hotelPDJChecked, setHotelPDJChecked] = useState(true);
     const [soireeEtapeChecked, setSoireeEtapeChecked] = useState(false);
     const [hotelErrors, setHotelErrors] = useState({});
@@ -47,19 +52,21 @@ export default function PlafondNotesFrais() {
 
     const handleSaveRepas = async () => {
         const errs = {};
-        const m = parseFloat(repasMontant);
-        if (!repasMontant || isNaN(m) || m <= 0) errs.montant = 'Montant requis';
-        if (!repasDate) errs.date = 'Date requise';
+        const errMontant = validateMontantPositif(repasMontant);
+        if (errMontant) errs.montant = errMontant;
+        const errDate = validateDate(repasDate);
+        if (errDate) errs.date = errDate;
         if (Object.keys(errs).length) { setRepasErrors(errs); return; }
         setRepasErrors({});
         setRepasSaving(true);
         try {
-            const updated = await ajouterPlafond('repas', m, repasDate);
+            const updated = await ajouterPlafond('repas', parseFloat(repasMontant), repasDate);
             setPlafonds(updated);
             setRepasMontant('');
-            setRepasDate('');
+            setRepasDate(null);
+            showSnackbar('Plafond repas enregistré');
         } catch (err) {
-            setRepasErrors({ save: err.message });
+            showSnackbar(err.message || 'Erreur lors de la sauvegarde', 'error');
         } finally {
             setRepasSaving(false);
         }
@@ -67,9 +74,10 @@ export default function PlafondNotesFrais() {
 
     const handleSaveHotel = async () => {
         const errs = {};
-        const m = parseFloat(hotelMontant);
-        if (!hotelMontant || isNaN(m) || m <= 0) errs.montant = 'Montant requis';
-        if (!hotelDate) errs.date = 'Date requise';
+        const errMontant = validateMontantPositif(hotelMontant);
+        if (errMontant) errs.montant = errMontant;
+        const errDate = validateDate(hotelDate);
+        if (errDate) errs.date = errDate;
         if (!hotelPDJChecked && !soireeEtapeChecked) errs.types = 'Sélectionnez au moins un type';
         if (Object.keys(errs).length) { setHotelErrors(errs); return; }
         setHotelErrors({});
@@ -78,13 +86,14 @@ export default function PlafondNotesFrais() {
             const types = [...(hotelPDJChecked ? ['hotelPDJ'] : []), ...(soireeEtapeChecked ? ['soireeEtape'] : [])];
             let updated = plafonds;
             for (const type of types) {
-                updated = await ajouterPlafond(type, m, hotelDate);
+                updated = await ajouterPlafond(type, parseFloat(hotelMontant), hotelDate);
             }
             setPlafonds(updated);
             setHotelMontant('');
-            setHotelDate('');
+            setHotelDate(null);
+            showSnackbar('Plafond hôtel enregistré');
         } catch (err) {
-            setHotelErrors({ save: err.message });
+            showSnackbar(err.message || 'Erreur lors de la sauvegarde', 'error');
         } finally {
             setHotelSaving(false);
         }
@@ -125,22 +134,22 @@ export default function PlafondNotesFrais() {
                         placeholder="ex : 22.00"
                         value={repasMontant}
                         onChange={e => { setRepasMontant(e.target.value); setRepasErrors(p => ({ ...p, montant: undefined })); }}
+                        onKeyDown={e => { if (e.key === 'Enter') handleSaveRepas(); if (e.key === 'Escape') { setRepasMontant(''); setRepasDate(null); setRepasErrors({}); } }}
                         error={!!repasErrors.montant}
                         helperText={repasErrors.montant}
                         slotProps={{ inputLabel: { shrink: true }, htmlInput: { min: 0, step: 0.01 } }}
                         sx={{ width: 200 }}
                     />
-                    <TextField
-                        label="Date d'effet"
-                        size="small"
-                        type="date"
-                        value={repasDate}
-                        onChange={e => { setRepasDate(e.target.value); setRepasErrors(p => ({ ...p, date: undefined })); }}
-                        error={!!repasErrors.date}
-                        helperText={repasErrors.date}
-                        slotProps={{ inputLabel: { shrink: true } }}
-                        sx={{ width: 180 }}
-                    />
+                    <Box sx={{ width: 180 }}>
+                        <AppDatePicker
+                            value={repasDate}
+                            onChange={v => { setRepasDate(v); setRepasErrors(p => ({ ...p, date: undefined })); }}
+                            onSave={handleSaveRepas}
+                            onCancel={() => { setRepasDate(null); setRepasErrors(p => ({ ...p, date: undefined })); }}
+                            error={!!repasErrors.date}
+                            helperText={repasErrors.date}
+                        />
+                    </Box>
                     <Button
                         variant="contained"
                         onClick={handleSaveRepas}
@@ -150,7 +159,6 @@ export default function PlafondNotesFrais() {
                         Enregistrer
                     </Button>
                 </Box>
-                {repasErrors.save && <Alert severity="error" sx={{ mt: 1.5 }}>{repasErrors.save}</Alert>}
             </Paper>
 
             {/* ── Hôtel ── */}
@@ -170,22 +178,22 @@ export default function PlafondNotesFrais() {
                         placeholder="ex : 120.00"
                         value={hotelMontant}
                         onChange={e => { setHotelMontant(e.target.value); setHotelErrors(p => ({ ...p, montant: undefined })); }}
+                        onKeyDown={e => { if (e.key === 'Enter') handleSaveHotel(); if (e.key === 'Escape') { setHotelMontant(''); setHotelDate(null); setHotelErrors({}); } }}
                         error={!!hotelErrors.montant}
                         helperText={hotelErrors.montant}
                         slotProps={{ inputLabel: { shrink: true }, htmlInput: { min: 0, step: 0.01 } }}
                         sx={{ width: 200 }}
                     />
-                    <TextField
-                        label="Date d'effet"
-                        size="small"
-                        type="date"
-                        value={hotelDate}
-                        onChange={e => { setHotelDate(e.target.value); setHotelErrors(p => ({ ...p, date: undefined })); }}
-                        error={!!hotelErrors.date}
-                        helperText={hotelErrors.date}
-                        slotProps={{ inputLabel: { shrink: true } }}
-                        sx={{ width: 180 }}
-                    />
+                    <Box sx={{ width: 180 }}>
+                        <AppDatePicker
+                            value={hotelDate}
+                            onChange={v => { setHotelDate(v); setHotelErrors(p => ({ ...p, date: undefined })); }}
+                            onSave={handleSaveHotel}
+                            onCancel={() => { setHotelDate(null); setHotelErrors(p => ({ ...p, date: undefined })); }}
+                            error={!!hotelErrors.date}
+                            helperText={hotelErrors.date}
+                        />
+                    </Box>
                     <FormControlLabel
                         control={
                             <Checkbox
@@ -218,9 +226,9 @@ export default function PlafondNotesFrais() {
                     </Button>
                 </Box>
                 {hotelErrors.types && <Alert severity="warning" sx={{ mt: 1.5 }}>{hotelErrors.types}</Alert>}
-                {hotelErrors.save && <Alert severity="error" sx={{ mt: 1.5 }}>{hotelErrors.save}</Alert>}
             </Paper>
 
+            <AppSnackbar snackbar={snackbar} onClose={handleCloseSnackbar} />
         </Box>
     );
 }

@@ -13,12 +13,18 @@ export const focusCell = (apiRef, id, field, type, delay = 50) => {
     }, delay);
 };
 
-// Construit un message d'erreur lisible à partir des erreurs de colonnes
-export const buildErrorMessage = (columns, errors) =>
-    columns
+// Construit un message d'erreur lisible à partir des erreurs de colonnes (messages dédupliqués)
+export const buildErrorMessage = (columns, errors) => {
+    const seen = new Set();
+    return columns
         .filter(col => errors[col.field] && typeof errors[col.field] === 'string')
-        .map(col => errors[col.field])
+        .reduce((acc, col) => {
+            const msg = errors[col.field];
+            if (!seen.has(msg)) { seen.add(msg); acc.push(msg); }
+            return acc;
+        }, [])
         .join(' · ');
+};
 
 // Fusionne les données sauvegardées d'une ligne avec son état d'édition en cours
 export const getEditValues = (apiRef, id) => {

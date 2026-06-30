@@ -1,3 +1,5 @@
+import { validateMontantPositif } from './validators.js';
+
 export const validateRow = (row) => {
     const errors = {};
 
@@ -17,12 +19,8 @@ export const validateRow = (row) => {
         errors.periodicite = 'La périodicité est obligatoire';
     }
 
-    const montant = parseFloat(row.montant);
-    if (row.montant === null || row.montant === undefined || String(row.montant).trim() === '') {
-        errors.montant = 'Le montant est obligatoire';
-    } else if (isNaN(montant) || montant <= 0) {
-        errors.montant = 'Le montant doit être supérieur à 0';
-    }
+    const errMontant = validateMontantPositif(row.montant);
+    if (errMontant) errors.montant = errMontant;
 
     const isMensuel = row.periodicite === 'Mensuel';
     const jourMax = isMensuel ? 31 : 12;

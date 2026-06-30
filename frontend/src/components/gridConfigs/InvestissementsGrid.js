@@ -11,7 +11,8 @@ export const extraRowDefaults = {
     type: 'PEA',
     tauxFrais: 0,
     courtier: '',
-    notes: '',
+    sommeInitiale: 0,
+    datePremierVersement: null,
 };
 
 export const InvestissementsColumns = [
@@ -37,10 +38,19 @@ export const InvestissementsColumns = [
         editable: true,
     },
     {
-        field: 'montantInvesti',
-        headerName: 'Montant versé (€)',
+        field: 'sommeInitiale',
+        headerName: 'Somme initiale (€)',
         type: 'number',
-        width: 160,
+        width: 155,
+        editable: true,
+        align: 'center',
+        valueFormatter: formatEuro,
+    },
+    {
+        field: 'montantInvesti',
+        headerName: 'Versement mensuel (€)',
+        type: 'number',
+        width: 180,
         editable: true,
         align: 'center',
         valueFormatter: formatEuro,
@@ -63,9 +73,11 @@ export const InvestissementsColumns = [
         align: 'center',
     },
     {
-        field: 'notes',
-        headerName: 'Notes',
-        flex: 1,
+        field: 'datePremierVersement',
+        headerName: '1er versement programmé',
+        type: 'date',
+        width: 195,
         editable: true,
+        align: 'center',
     },
 ];

@@ -1,42 +1,33 @@
-/**
- * Validation métier spécifique aux dépenses/recettes
- */
+import { validateDate } from './validators.js';
+
 export const validateRow = (row) => {
     const errors = {};
-    const today = new Date();
-    today.setHours(23, 59, 59, 999);
+
+    if (!row.compte || row.compte.trim() === '') {
+        errors.compte = 'Le compte est obligatoire';
+    }
+
+    if (!row.description || row.description.trim() === '') {
+        errors.description = 'Une description est obligatoire';
+    }
 
     const depense = parseFloat(row.depenses) || 0;
     const recette = parseFloat(row.recettes) || 0;
 
-    // Règle 0 : Compte obligatoire
-    if (!row.compte || row.compte.trim() === "") {
-        errors.compte = "Le compte est obligatoire";
-    }
-
-    // Règle 1 : Description obligatoire
-    if (!row.description || row.description.trim() === "") {
-        errors.description = "Une description est obligatoire";
-    }
-
-    // Règle 2 : Soit dépense soit recette (pas les deux, ni rien)
     if (depense === 0 && recette === 0) {
-        errors.depenses = "Saisissez soit une dépense, soit une recette";
-        errors.recettes = true;
+        errors.depenses = 'Saisissez soit une dépense, soit une recette';
+        errors.recettes = 'Saisissez soit une dépense, soit une recette';
     }
     if (depense > 0 && recette > 0) {
         errors.depenses = "Impossible d'avoir une dépense et une recette en même temps";
-        errors.recettes = true;
+        errors.recettes = "Impossible d'avoir une dépense et une recette en même temps";
     }
 
-    // Règle 3 : Date obligatoire si pas chèque en cours ni frais fixe
-    if (row.chequeEnCours === false && !row.dateDepensesRecettes && !row.fraisFixe) {
-        errors.dateDepensesRecettes = "La date est obligatoire (ou cochez Chèque en cours)";
-    }
-
-    // Règle 4 : Pas de date dans le futur
-    if (row.dateDepensesRecettes && new Date(row.dateDepensesRecettes) > today) {
-        errors.dateDepensesRecettes = "La date ne peut pas être dans le futur";
+    if (row.chequeEnCours === false && !row.fraisFixe) {
+        const errDate = validateDate(row.dateDepensesRecettes);
+        if (errDate) errors.dateDepensesRecettes = errDate === 'La date est obligatoire'
+            ? 'La date est obligatoire (ou cochez Chèque en cours)'
+            : errDate;
     }
 
     return errors;

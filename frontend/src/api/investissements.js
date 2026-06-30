@@ -8,7 +8,8 @@ const fromApi = (doc) => ({
     montantInvesti: doc.montantInvesti ?? 0,
     tauxFrais: doc.tauxFrais ?? 0,
     dateOuverture: doc.dateOuverture ? new Date(doc.dateOuverture) : null,
-    notes: doc.notes ?? '',
+    sommeInitiale: doc.sommeInitiale ?? 0,
+    datePremierVersement: doc.datePremierVersement ? new Date(doc.datePremierVersement) : null,
     fraisFixeRef: doc.fraisFixeRef || null,
     historique: (doc.historique ?? []).map(h => ({
         id: h.id,
@@ -25,7 +26,8 @@ const toApi = (row) => ({
     montantInvesti: parseFloat(row.montantInvesti) || 0,
     tauxFrais: parseFloat(row.tauxFrais) || 0,
     dateOuverture: formatDate(row.dateOuverture),
-    notes: row.notes || '',
+    sommeInitiale: parseFloat(row.sommeInitiale) || 0,
+    datePremierVersement: formatDate(row.datePremierVersement),
 });
 
 export const fetchInvestissements = async () => {

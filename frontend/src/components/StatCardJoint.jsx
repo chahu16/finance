@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, memo } from 'react';
 import Box from '@mui/material/Box';
 import Divider from '@mui/material/Divider';
 import Typography from '@mui/material/Typography';
@@ -174,4 +174,4 @@ function StatCardJoint({ compte, rows, compteData, compteJointConfig, virementIn
     );
 }
 
-export default StatCardJoint;
+export default memo(StatCardJoint);

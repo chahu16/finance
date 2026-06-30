@@ -8,6 +8,8 @@ const investissementSchema = mongoose.Schema({
     montantInvesti: { type: Number, default: 0 },
     tauxFrais: { type: Number, default: 0 },
     dateOuverture: { type: Date, default: null },
+    sommeInitiale: { type: Number, default: 0 },
+    datePremierVersement: { type: Date, default: null },
     notes: { type: String, default: '' },
     fraisFixeRef: { type: mongoose.Schema.Types.ObjectId, ref: 'frais-fixe', default: null },
     historique: [{

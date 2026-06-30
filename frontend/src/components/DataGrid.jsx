@@ -23,6 +23,7 @@ import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import { fr } from 'date-fns/locale';
 import AddIcon from '@mui/icons-material/Add';
 import UploadFileIcon from '@mui/icons-material/UploadFile';
+import FileDownloadIcon from '@mui/icons-material/FileDownload';
 import EditIcon from '@mui/icons-material/Edit';
 import DeleteIcon from '@mui/icons-material/DeleteOutlined';
 import SaveIcon from '@mui/icons-material/Save';
@@ -147,7 +148,7 @@ function parseCSVValue(value, type) {
 }
 
 // ─── Barre d'outils avec bouton Ajouter ───────────────────────────────────────
-function EditToolbar({ setRows, setRowModesModel, addButtonLabel, emptyRow, fieldFocusAdd, isAnyRowEditing, setShowErrors, customColumns, validateRow, showSnackbar, toolbarSlotEnd, showImport }) {
+function EditToolbar({ setRows, setRowModesModel, addButtonLabel, emptyRow, fieldFocusAdd, isAnyRowEditing, setShowErrors, customColumns, validateRow, showSnackbar, toolbarSlotEnd, showImport, showExport, onExportClick }) {
     const apiRef = useGridApiContext();
     const fileInputRef = React.useRef(null);
     const [errorDialog, setErrorDialog] = React.useState({ open: false, rows: [], imported: 0 });
@@ -311,6 +312,19 @@ function EditToolbar({ setRows, setRowModesModel, addButtonLabel, emptyRow, fiel
                     Importer CSV
                 </Button>
                 )}
+                {showExport && (
+                <Button
+                    color="primary"
+                    variant="outlined"
+                    startIcon={<FileDownloadIcon />}
+                    disabled={isAnyRowEditing}
+                    onClick={onExportClick}
+                    size="small"
+                    sx={importButtonStyle}
+                >
+                    Exporter
+                </Button>
+                )}
                 {toolbarSlotEnd}
             </GridToolbarContainer>
         </>
@@ -336,6 +350,8 @@ export default function FullFeaturedCrudGrid({
     rowFilter = null,
     toolbarSlotEnd = null,
     showImport = false,
+    showExport = false,
+    onExportClick = null,
     resolveDelete = null,
     onSave = null,
     onDeleteConfirm = null,
@@ -353,7 +369,7 @@ export default function FullFeaturedCrudGrid({
     const [rowToDelete, setRowToDelete] = React.useState(null);
     const [deleteResolution, setDeleteResolution] = React.useState(null);
     const [showErrors, setShowErrors] = React.useState(false);
-    const [snackbar, setSnackbar] = React.useState({ open: false, message: '', severity: 'success' });
+    const [snackbar, setSnackbar] = React.useState({ open: false, message: '', severity: 'success', key: 0 });
 
     const msgSuccess = messages.success ?? 'Ligne enregistrée avec succès';
     const msgCancel = messages.cancel ?? 'Édition annulée';
@@ -368,8 +384,9 @@ export default function FullFeaturedCrudGrid({
     const justSavedNewRowIdRef = React.useRef(null);
 
     // ─── Snackbar ─────────────────────────────────────────────────────────────
+    // Incrémenter key force le remontage du Snackbar → reset du timer autoHideDuration
     const showSnackbar = React.useCallback((message, severity) => {
-        setSnackbar({ open: true, message, severity });
+        setSnackbar(prev => ({ open: true, message, severity, key: prev.key + 1 }));
     }, []);
 
     const handleCloseSnackbar = (_, reason) => {
@@ -574,6 +591,7 @@ export default function FullFeaturedCrudGrid({
             setShowErrors(true);
             const error = new Error(buildErrorMessage(columns, errors) || 'Validation échouée');
             error.isValidationError = true;
+            error.rowId = newRow.id;
             throw error;
         }
 
@@ -835,6 +853,13 @@ export default function FullFeaturedCrudGrid({
                 processRowUpdate={processRowUpdate}
                 onProcessRowUpdateError={(error) => {
                     showSnackbar(error.message || 'Erreur de validation', 'error');
+                    // Après un échec de validation, MUI perd le focus (transition View→Edit revert)
+                    // → forcer le focus sur la 1re cellule pour que Échap/Entrée fonctionnent
+                    if (error.isValidationError && error.rowId) {
+                        setTimeout(() => {
+                            apiRef.current.setCellFocus(error.rowId, customColumns[0]?.field);
+                        }, 100);
+                    }
                 }}
                 onCellDoubleClick={(params, event) => {
                     if (!isAnyRowEditing) {
@@ -846,12 +871,13 @@ export default function FullFeaturedCrudGrid({
                 showToolbar
                 slots={{ toolbar: EditToolbar }}
                 slotProps={{
-                    toolbar: { setRows, setRowModesModel, addButtonLabel, emptyRow, fieldFocusAdd, isAnyRowEditing, setShowErrors, customColumns, validateRow, showSnackbar, toolbarSlotEnd, showImport },
+                    toolbar: { setRows, setRowModesModel, addButtonLabel, emptyRow, fieldFocusAdd, isAnyRowEditing, setShowErrors, customColumns, validateRow, showSnackbar, toolbarSlotEnd, showImport, showExport, onExportClick },
                 }}
             />
 
             {/* Snackbar de retour utilisateur : succès (vert), erreur (rouge), annulation (orange) */}
             <Snackbar
+                key={snackbar.key}
                 open={snackbar.open}
                 autoHideDuration={3000}
                 onClose={handleCloseSnackbar}
